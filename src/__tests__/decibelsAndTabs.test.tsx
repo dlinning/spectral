@@ -50,7 +50,7 @@ describe("Decibels Tab, Meter UI & Scrollable Header Tabs", () => {
 		render(<App />);
 
 		const tabs = Array.from(container.querySelectorAll<HTMLButtonElement>('.top-tabs [role="tab"]'));
-		expect(tabs.map(t => t.textContent?.trim())).toEqual(["Spectrum Analyzer", "Spectrogram", "Tuner", "Decibels"]);
+		expect(tabs.map(t => t.textContent?.trim())).toEqual(["Analyzer", "Spectrogram", "Tuner", "Decibels"]);
 
 		const decibelsTab = tabs[3];
 		act(() => {
@@ -117,11 +117,11 @@ describe("Decibels Tab, Meter UI & Scrollable Header Tabs", () => {
 		expect(dbToAngleDeg(120)).toBe(80);
 
 		expect(getRealWorldEquivalent(0)).toBe("0dB - Quietest sound heard");
-		expect(getRealWorldEquivalent(32)).toBe("30dB - Whisper Quiet Library at 6'");
-		expect(getRealWorldEquivalent(63)).toBe("60-65dB - Normal conversation at 3'");
-		expect(getRealWorldEquivalent(90)).toBe("90dB - Train whistle at 500', Truck Traffic");
-		expect(getRealWorldEquivalent(92)).toBe("90 - 95dB - Level at which sustained exposure may result in hearing loss");
-		expect(getRealWorldEquivalent(111)).toBe("110dB - Power saw at 3'");
+		expect(getRealWorldEquivalent(32)).toBe("30dB - Whispering nearby");
+		expect(getRealWorldEquivalent(63)).toBe("60dB - Normal Conversation");
+		expect(getRealWorldEquivalent(90)).toBe("90dB - Subway Train");
+		expect(getRealWorldEquivalent(92)).toBe("90dB - Subway Train");
+		expect(getRealWorldEquivalent(111)).toBe("110dB - Baby Crying");
 		expect(getRealWorldEquivalent(140)).toBe("140dB - Jet engine at 100'");
 	});
 
@@ -188,7 +188,7 @@ describe("Decibels Tab, Meter UI & Scrollable Header Tabs", () => {
 		expect(minEl.textContent).toContain("111dB");
 		const equivalentEl = container.querySelector('[data-testid="decibels-equivalent"]')!;
 		expect(equivalentEl).not.toBeNull();
-		expect(equivalentEl.textContent).toBe("110dB - Power saw at 3'");
+		expect(equivalentEl.textContent).toBe("110dB - Baby Crying");
 		expect(Boolean(currentEl.compareDocumentPosition(equivalentEl) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
 		expect(Boolean(equivalentEl.compareDocumentPosition(peakEl) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
 		const currentNeedle = container.querySelector('[data-testid="decibels-needle-current"]')!;
@@ -206,7 +206,7 @@ describe("Decibels Tab, Meter UI & Scrollable Header Tabs", () => {
 
 		// Drop level to amp = 0.05 (RMS ≈ -29.03 dBFS -> 91.0 dB SPL); peak stays 111, min drops to 91
 		amp = 0.05;
-		for (let i = 0; i < 30; i++) {
+		for (let i = 0; i < 90; i++) {
 			stepFrame(16);
 		}
 		expect(peakEl.textContent).toContain("111dB");
