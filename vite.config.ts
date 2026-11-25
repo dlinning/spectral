@@ -1,6 +1,13 @@
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import type { InlineConfig } from 'vitest/node';
+
+declare module 'vite' {
+  interface UserConfig {
+    test?: InlineConfig;
+  }
+}
 
 export default defineConfig({
   base: './',
@@ -19,10 +26,9 @@ export default defineConfig({
         'wasm/spectral_dsp.wasm',
       ],
       manifest: {
-        name: 'Spectral — Acoustic Analyzer, Spectrograph & Tuner',
+        name: 'Spectral — Spectrum Analyzer, Spectrogram & Tuner',
         short_name: 'Spectral',
-        description:
-          'High-precision WebAssembly Spectrum Analyzer with fractional-octave smoothing, 60s Spectrograph, and Chromatic Musical Tuner.',
+        description: 'Spectrum Analyzer, Spectrogram, and Chromatic Musical Tuner.',
         theme_color: '#090d16',
         background_color: '#090d16',
         display: 'standalone',
@@ -63,4 +69,4 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
   },
-} as any);
+});
