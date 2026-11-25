@@ -4,7 +4,7 @@ import {
   AppTab,
   AudioPreferences,
   MusicalTunerPreferences,
-  SpectrographPreferences,
+  SpectrogramPreferences,
   SpectrumAnalyzerPreferences,
   UserPreferences,
 } from '../types/preferences';
@@ -16,7 +16,7 @@ interface PreferencesContextValue {
   setActiveTab: (tab: AppTab) => void;
   updateAudioPrefs: (patch: Partial<AudioPreferences>) => void;
   updateAnalyzerPrefs: (patch: Partial<SpectrumAnalyzerPreferences>) => void;
-  updateSpectrographPrefs: (patch: Partial<SpectrographPreferences>) => void;
+  updateSpectrogramPrefs: (patch: Partial<SpectrogramPreferences>) => void;
   updateTunerPrefs: (patch: Partial<MusicalTunerPreferences>) => void;
 }
 
@@ -52,11 +52,11 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({ c
     [updatePreferences]
   );
 
-  const updateSpectrographPrefs = useCallback(
-    (patch: Partial<SpectrographPreferences>) => {
+  const updateSpectrogramPrefs = useCallback(
+    (patch: Partial<SpectrogramPreferences>) => {
       updatePreferences((prev) => ({
         ...prev,
-        spectrograph: { ...prev.spectrograph, ...patch },
+        spectrogram: { ...prev.spectrogram, ...patch },
       }));
     },
     [updatePreferences]
@@ -80,7 +80,7 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({ c
       setActiveTab,
       updateAudioPrefs,
       updateAnalyzerPrefs,
-      updateSpectrographPrefs,
+      updateSpectrogramPrefs,
       updateTunerPrefs,
     }),
     [
@@ -90,7 +90,7 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({ c
       setActiveTab,
       updateAudioPrefs,
       updateAnalyzerPrefs,
-      updateSpectrographPrefs,
+      updateSpectrogramPrefs,
       updateTunerPrefs,
     ]
   );

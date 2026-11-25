@@ -1,6 +1,6 @@
 import React from 'react';
-import { SpectrographBuffer } from '../../audio/SpectrographBuffer';
-import { SpectrographPreferences } from '../../types/preferences';
+import { SpectrogramBuffer } from '../../audio/SpectrogramBuffer';
+import { SpectrogramPreferences } from '../../types/preferences';
 import { getColormapLUT } from '../../utils/colormaps';
 import {
   formatFreqTick,
@@ -11,19 +11,19 @@ import {
   normToFreq,
 } from '../../utils/music';
 
-export const SPECTROGRAPH_PLOT_PADDING = {
+export const SPECTROGRAM_PLOT_PADDING = {
   left: 52, // Frequency Y-axis labels
   right: 52, // dB colorbar legend
   top: 16,
   bottom: 28, // Time X-axis labels
 } as const;
 
-export function getSpectrographPlotBounds(width: number, height: number, labelFontPx = 11) {
+export function getSpectrogramPlotBounds(width: number, height: number, labelFontPx = 11) {
   const extra = Math.max(0, labelFontPx - 11);
-  const padLeft = SPECTROGRAPH_PLOT_PADDING.left + extra * 3;
-  const padRight = SPECTROGRAPH_PLOT_PADDING.right + extra * 4;
-  const padTop = SPECTROGRAPH_PLOT_PADDING.top;
-  const padBottom = SPECTROGRAPH_PLOT_PADDING.bottom + extra * 2;
+  const padLeft = SPECTROGRAM_PLOT_PADDING.left + extra * 3;
+  const padRight = SPECTROGRAM_PLOT_PADDING.right + extra * 4;
+  const padTop = SPECTROGRAM_PLOT_PADDING.top;
+  const padBottom = SPECTROGRAM_PLOT_PADDING.bottom + extra * 2;
   return {
     padLeft,
     padRight,
@@ -34,9 +34,9 @@ export function getSpectrographPlotBounds(width: number, height: number, labelFo
   };
 }
 
-export function getSpectrographPeakDbInRange(
-  buffer: SpectrographBuffer,
-  prefs: SpectrographPreferences,
+export function getSpectrogramPeakDbInRange(
+  buffer: SpectrogramBuffer,
+  prefs: SpectrogramPreferences,
   sampleRate: number,
   fftSize: number,
   effectiveScrollBack: number,
@@ -70,15 +70,15 @@ export function getSpectrographPeakDbInRange(
   return Number.isFinite(peakDb) && peakDb > -150 ? peakDb : null;
 }
 
-export function getSpectrographTargetPoint(
-  target: SpectrographHoverInfo,
+export function getSpectrogramTargetPoint(
+  target: SpectrogramHoverInfo,
   width: number,
   height: number,
-  prefs: SpectrographPreferences,
+  prefs: SpectrogramPreferences,
   effectiveScrollBack: number,
   labelFontPx = 11
 ): { x: number; y: number } | null {
-  const { padLeft, padTop, plotW, plotH } = getSpectrographPlotBounds(width, height, labelFontPx);
+  const { padLeft, padTop, plotW, plotH } = getSpectrogramPlotBounds(width, height, labelFontPx);
   const normX = 1 - (-target.timeOffsetSec - effectiveScrollBack) / prefs.historyDurationSec;
   const normY = freqToNorm(target.freq, prefs.minFreq, prefs.maxFreq, prefs.freqScale);
   if (normX < 0 || normX > 1 || normY < 0 || normY > 1) return null;
@@ -88,27 +88,27 @@ export function getSpectrographTargetPoint(
   };
 }
 
-export interface SpectrographRenderParams {
+export interface SpectrogramRenderParams {
   width: number;
   height: number;
   dpr: number;
-  prefs: SpectrographPreferences;
-  buffer: SpectrographBuffer;
+  prefs: SpectrogramPreferences;
+  buffer: SpectrogramBuffer;
   sampleRate: number;
   fftSize: number;
   effectiveScrollBack: number;
   frameCount: number;
   earliestMs: number;
   latestMs: number;
-  target?: SpectrographHoverInfo | null;
+  target?: SpectrogramHoverInfo | null;
   labelFontPx?: number;
 }
 
-export function renderSpectrographCanvas(
+export function renderSpectrogramCanvas(
   ctx: CanvasRenderingContext2D,
   offscreenRef: React.MutableRefObject<HTMLCanvasElement | null>,
   imageDataRef: React.MutableRefObject<ImageData | null>,
-  params: SpectrographRenderParams
+  params: SpectrogramRenderParams
 ): void {
   const {
     width: w,
@@ -126,7 +126,7 @@ export function renderSpectrographCanvas(
     labelFontPx = 11,
   } = params;
 
-  const { padLeft, padTop, plotW, plotH } = getSpectrographPlotBounds(w, h, labelFontPx);
+  const { padLeft, padTop, plotW, plotH } = getSpectrogramPlotBounds(w, h, labelFontPx);
 
   ctx.save();
   ctx.scale(dpr, dpr);
@@ -315,7 +315,7 @@ export function renderSpectrographCanvas(
 
   // Target reticle & axis badges
   if (target) {
-    const pt = getSpectrographTargetPoint(target, w, h, prefs, effectiveScrollBack, labelFontPx);
+    const pt = getSpectrogramTargetPoint(target, w, h, prefs, effectiveScrollBack, labelFontPx);
     if (pt) {
       const { x: tx, y: ty } = pt;
 
@@ -383,26 +383,26 @@ export function renderSpectrographCanvas(
   ctx.restore();
 }
 
-export interface SpectrographHoverInfo {
+export interface SpectrogramHoverInfo {
   freq: number;
   note: string;
   timeOffsetSec: number;
   db: number | null;
 }
 
-export function inspectSpectrographPoint(
-  buffer: SpectrographBuffer,
+export function inspectSpectrogramPoint(
+  buffer: SpectrogramBuffer,
   clientX: number,
   clientY: number,
   rect: DOMRect,
-  prefs: SpectrographPreferences,
+  prefs: SpectrogramPreferences,
   fftSize: number,
   sampleRate: number,
   effectiveScrollBack: number,
   frameCount: number,
   latestMs: number
-): SpectrographHoverInfo | null {
-  const { padLeft, padTop, plotW, plotH } = getSpectrographPlotBounds(rect.width, rect.height);
+): SpectrogramHoverInfo | null {
+  const { padLeft, padTop, plotW, plotH } = getSpectrogramPlotBounds(rect.width, rect.height);
   const x = clientX - rect.left;
   const y = clientY - rect.top;
 

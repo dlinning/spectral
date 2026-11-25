@@ -8,7 +8,7 @@ import React, {
   useState,
 } from 'react';
 import { AudioDeviceInfo, AudioEngine, AudioSourceKind } from '../audio/AudioEngine';
-import { SpectrographBuffer } from '../audio/SpectrographBuffer';
+import { SpectrogramBuffer } from '../audio/SpectrogramBuffer';
 import { timeConstantMsToAlpha } from '../utils/music';
 import { dspBridge } from '../wasm/dspBridge';
 import { usePreferencesContext } from './PreferencesContext';
@@ -20,17 +20,17 @@ interface AudioContextValue {
   devices: AudioDeviceInfo[];
   errorMsg: string | null;
   analyzerPaused: boolean;
-  spectrographPaused: boolean;
+  spectrogramPaused: boolean;
   isTonePlaying: boolean;
-  spectrographBuffer: SpectrographBuffer;
+  spectrogramBuffer: SpectrogramBuffer;
   latestBinsRef: React.MutableRefObject<Float32Array>;
   latestTimeDomainRef: React.MutableRefObject<Float32Array>;
   startMicrophone: (deviceIdOverride?: string) => Promise<void>;
   stopAudio: () => void;
   clearError: () => void;
   toggleAnalyzerPause: () => void;
-  toggleSpectrographPause: () => void;
-  clearSpectrographBuffer: () => void;
+  toggleSpectrogramPause: () => void;
+  clearSpectrogramBuffer: () => void;
   startReferenceTone: (
     freqHz: number,
     waveform: 'sine' | 'triangle',
@@ -48,7 +48,7 @@ const AudioFrameContext = createContext<number>(0);
 export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { preferences } = usePreferencesContext();
   const { fftSize, inputDeviceId } = preferences.audio;
-  const spectroTimeSmoothingMs = preferences.spectrograph.timeSmoothingMs;
+  const spectroTimeSmoothingMs = preferences.spectrogram.timeSmoothingMs;
 
   const audioEngineRef = useRef<AudioEngine | null>(null);
   if (!audioEngineRef.current) {
@@ -56,18 +56,18 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }
   const audioEngine = audioEngineRef.current;
 
-  const spectrographBufferRef = useRef<SpectrographBuffer | null>(null);
-  if (!spectrographBufferRef.current) {
-    spectrographBufferRef.current = new SpectrographBuffer(3600, fftSize / 2, 48000, 60);
+  const spectrogramBufferRef = useRef<SpectrogramBuffer | null>(null);
+  if (!spectrogramBufferRef.current) {
+    spectrogramBufferRef.current = new SpectrogramBuffer(3600, fftSize / 2, 48000, 60);
   }
-  const spectrographBuffer = spectrographBufferRef.current;
+  const spectrogramBuffer = spectrogramBufferRef.current;
 
   const [sourceKind, setSourceKind] = useState<AudioSourceKind>('none');
   const [sampleRate, setSampleRate] = useState<number>(48000);
   const [devices, setDevices] = useState<AudioDeviceInfo[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [analyzerPaused, setAnalyzerPaused] = useState<boolean>(false);
-  const [spectrographPaused, setSpectrographPaused] = useState<boolean>(false);
+  const [spectrogramPaused, setSpectrogramPaused] = useState<boolean>(false);
   const [isTonePlaying, setIsTonePlaying] = useState<boolean>(false);
   const [frameTick, setFrameTick] = useState<number>(0);
 
@@ -94,10 +94,10 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (latestTimeDomainRef.current.length !== fftSize) {
       latestTimeDomainRef.current = new Float32Array(fftSize);
     }
-    spectrographBuffer.configure(numBins, sampleRate);
-  }, [fftSize, audioEngine, spectrographBuffer, sampleRate]);
+    spectrogramBuffer.configure(numBins, sampleRate);
+  }, [fftSize, audioEngine, spectrogramBuffer, sampleRate]);
 
-  // Continuous 60fps audio polling loop feeding Spectrum, Spectrograph 60s Ring Buffer, and Tuner
+  // Continuous 60fps audio polling loop feeding Spectrum, Spectrogram 60s Ring Buffer, and Tuner
   useEffect(() => {
     if (sourceKind === 'none') return;
     let rafId = 0;
@@ -111,10 +111,10 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       audioEngine.getTimeDomainData(latestTimeDomainRef.current);
 
       if (hasFreq) {
-        if (!spectrographPaused) {
+        if (!spectrogramPaused) {
           const alpha = timeConstantMsToAlpha(spectroTimeSmoothingMs, dtMs);
           dspBridge.applyTimeSmoothing(latestBinsRef.current, spectroSmoothedRef.current, alpha);
-          spectrographBuffer.pushFrame(spectroSmoothedRef.current, nowMs);
+          spectrogramBuffer.pushFrame(spectroSmoothedRef.current, nowMs);
         }
         setFrameTick((t) => (t + 1) & 0x7fffffff);
       }
@@ -123,7 +123,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, [sourceKind, audioEngine, spectrographBuffer, spectrographPaused, spectroTimeSmoothingMs]);
+  }, [sourceKind, audioEngine, spectrogramBuffer, spectrogramPaused, spectroTimeSmoothingMs]);
 
   // Stop reference tone playback whenever browser loses focus or is hidden
   useEffect(() => {
@@ -155,7 +155,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         await audioEngine.startMicrophone(deviceIdOverride ?? inputDeviceId);
         const sr = audioEngine.getSampleRate();
         setSampleRate(sr);
-        spectrographBuffer.configure(fftSize / 2, sr);
+        spectrogramBuffer.configure(fftSize / 2, sr);
         setSourceKind('mic');
         const list = await audioEngine.listInputDevices();
         setDevices(list);
@@ -164,7 +164,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setSourceKind('none');
       }
     },
-    [audioEngine, inputDeviceId, fftSize, spectrographBuffer]
+    [audioEngine, inputDeviceId, fftSize, spectrogramBuffer]
   );
 
   const stopAudio = useCallback(() => {
@@ -174,12 +174,12 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const clearError = useCallback(() => setErrorMsg(null), []);
   const toggleAnalyzerPause = useCallback(() => setAnalyzerPaused((p) => !p), []);
-  const toggleSpectrographPause = useCallback(() => setSpectrographPaused((p) => !p), []);
+  const toggleSpectrogramPause = useCallback(() => setSpectrogramPaused((p) => !p), []);
 
-  const clearSpectrographBuffer = useCallback(() => {
-    spectrographBuffer.clear();
+  const clearSpectrogramBuffer = useCallback(() => {
+    spectrogramBuffer.clear();
     setFrameTick((t) => (t + 1) & 0x7fffffff);
-  }, [spectrographBuffer]);
+  }, [spectrogramBuffer]);
 
   const startReferenceTone = useCallback(
     async (freqHz: number, waveform: 'sine' | 'triangle', volume: number) => {
@@ -209,17 +209,17 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       devices,
       errorMsg,
       analyzerPaused,
-      spectrographPaused,
+      spectrogramPaused,
       isTonePlaying,
-      spectrographBuffer,
+      spectrogramBuffer,
       latestBinsRef,
       latestTimeDomainRef,
       startMicrophone,
       stopAudio,
       clearError,
       toggleAnalyzerPause,
-      toggleSpectrographPause,
-      clearSpectrographBuffer,
+      toggleSpectrogramPause,
+      clearSpectrogramBuffer,
       startReferenceTone,
       updateReferenceTone,
       stopReferenceTone,
@@ -230,15 +230,15 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       devices,
       errorMsg,
       analyzerPaused,
-      spectrographPaused,
+      spectrogramPaused,
       isTonePlaying,
-      spectrographBuffer,
+      spectrogramBuffer,
       startMicrophone,
       stopAudio,
       clearError,
       toggleAnalyzerPause,
-      toggleSpectrographPause,
-      clearSpectrographBuffer,
+      toggleSpectrogramPause,
+      clearSpectrogramBuffer,
       startReferenceTone,
       updateReferenceTone,
       stopReferenceTone,

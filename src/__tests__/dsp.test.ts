@@ -1,12 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { SpectrographBuffer } from '../audio/SpectrographBuffer';
+import { SpectrogramBuffer } from '../audio/SpectrogramBuffer';
 import { PREFERENCES_STORAGE_KEY, loadPreferences, savePreferences } from '../hooks/usePreferences';
 import { DEFAULT_PREFERENCES, OctaveSmoothing } from '../types/preferences';
 import {
-  formatSpectrographCSV,
-  formatSpectrographJSON,
+  formatSpectrogramCSV,
+  formatSpectrogramJSON,
   formatSpectrumCSV,
   formatSpectrumJSON,
 } from '../utils/exporters';
@@ -156,10 +156,10 @@ describe('Spectral WASM DSP & Core Modules', () => {
     });
   });
 
-  describe('Spectrograph 60-Second Ring Buffer', () => {
+  describe('Spectrogram 60-Second Ring Buffer', () => {
     it('stores up to 3600 frames (60s at 60fps) and slices 5s, 15s, 30s, 60s accurately', () => {
       const numBins = 64;
-      const buffer = new SpectrographBuffer(3600, numBins, 48000, 60);
+      const buffer = new SpectrogramBuffer(3600, numBins, 48000, 60);
       const frame = new Float32Array(numBins);
 
       // Push 4000 frames at exact 16.6667ms intervals (~66.6s) to test ring wrap-around
@@ -219,20 +219,20 @@ describe('Spectral WASM DSP & Core Modules', () => {
       expect(parsed.data.length).toBeGreaterThan(100);
     });
 
-    it('exports Spectrograph data to valid CSV and JSON', () => {
-      const buffer = new SpectrographBuffer(3600, 128, 48000, 60);
+    it('exports Spectrogram data to valid CSV and JSON', () => {
+      const buffer = new SpectrogramBuffer(3600, 128, 48000, 60);
       const frame = new Float32Array(128).fill(-65);
       for (let i = 0; i < 10; i++) {
         frame[4] = -20 - i;
         buffer.pushFrame(frame, i * 100, true);
       }
 
-      const csv = formatSpectrographCSV(buffer, 256, DEFAULT_PREFERENCES.spectrograph);
+      const csv = formatSpectrogramCSV(buffer, 256, DEFAULT_PREFERENCES.spectrogram);
       const lines = csv.split('\n');
       expect(lines[0].startsWith('Time_Offset_s,')).toBe(true);
       expect(lines.length).toBe(11); // header + 10 frames
 
-      const jsonText = formatSpectrographJSON(buffer, 256, DEFAULT_PREFERENCES.spectrograph);
+      const jsonText = formatSpectrogramJSON(buffer, 256, DEFAULT_PREFERENCES.spectrogram);
       const parsed = JSON.parse(jsonText);
       expect(parsed.metadata.historyDurationSec).toBe(30);
       expect(parsed.frames.length).toBe(10);
@@ -247,20 +247,20 @@ describe('Spectral WASM DSP & Core Modules', () => {
 
     it('persists and restores active tab and view preferences via localStorage', () => {
       const custom = structuredClone(DEFAULT_PREFERENCES);
-      custom.activeTab = 'spectrograph';
+      custom.activeTab = 'spectrogram';
       custom.analyzer.octaveSmoothing = 12;
       custom.analyzer.freqScale = 'linear';
-      custom.spectrograph.historyDurationSec = 60;
+      custom.spectrogram.historyDurationSec = 60;
       custom.tuner.referenceA4 = 442;
 
       savePreferences(custom);
       expect(window.localStorage.getItem(PREFERENCES_STORAGE_KEY)).not.toBeNull();
 
       const restored = loadPreferences();
-      expect(restored.activeTab).toBe('spectrograph');
+      expect(restored.activeTab).toBe('spectrogram');
       expect(restored.analyzer.octaveSmoothing).toBe(12);
       expect(restored.analyzer.freqScale).toBe('linear');
-      expect(restored.spectrograph.historyDurationSec).toBe(60);
+      expect(restored.spectrogram.historyDurationSec).toBe(60);
       expect(restored.tuner.referenceA4).toBe(442);
     });
   });

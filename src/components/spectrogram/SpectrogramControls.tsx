@@ -16,7 +16,7 @@ const HISTORY_OPTIONS: readonly SegmentedOption<HistoryDurationSec>[] = [
   { value: 60, label: '60s' },
 ];
 
-interface SpectrographControlsProps {
+interface SpectrogramControlsProps {
   controlsOpen: boolean;
   nyquist: number;
   frameCount: number;
@@ -29,7 +29,7 @@ interface SpectrographControlsProps {
   onExportJSON: () => void;
 }
 
-export const SpectrographControls: React.FC<SpectrographControlsProps> = ({
+export const SpectrogramControls: React.FC<SpectrogramControlsProps> = ({
   controlsOpen,
   nyquist,
   frameCount,
@@ -41,9 +41,9 @@ export const SpectrographControls: React.FC<SpectrographControlsProps> = ({
   onExportCSV,
   onExportJSON,
 }) => {
-  const { preferences, updateSpectrographPrefs } = usePreferencesContext();
-  const { isAudioActive, spectrographPaused, toggleSpectrographPause } = useAudio();
-  const prefs = preferences.spectrograph;
+  const { preferences, updateSpectrogramPrefs } = usePreferencesContext();
+  const { isAudioActive, spectrogramPaused, toggleSpectrogramPause } = useAudio();
+  const prefs = preferences.spectrogram;
 
   return (
     <div className={`controls-dock ${controlsOpen ? '' : 'collapsed'}`}>
@@ -53,7 +53,7 @@ export const SpectrographControls: React.FC<SpectrographControlsProps> = ({
           ariaLabel="History Duration"
           options={HISTORY_OPTIONS}
           value={prefs.historyDurationSec}
-          onChange={(historyDurationSec) => updateSpectrographPrefs({ historyDurationSec })}
+          onChange={(historyDurationSec) => updateSpectrogramPrefs({ historyDurationSec })}
         />
       </div>
 
@@ -90,13 +90,13 @@ export const SpectrographControls: React.FC<SpectrographControlsProps> = ({
         <span className="control-label">Time Smooth</span>
         <input
           type="range"
-          aria-label="Spectrograph Time Smoothing"
+          aria-label="Spectrogram Time Smoothing"
           className="range-slider"
           min={0}
           max={300}
           step={10}
           value={prefs.timeSmoothingMs}
-          onChange={(e) => updateSpectrographPrefs({ timeSmoothingMs: Number(e.target.value) })}
+          onChange={(e) => updateSpectrogramPrefs({ timeSmoothingMs: Number(e.target.value) })}
         />
         <span className="mono-val">{prefs.timeSmoothingMs} ms</span>
       </div>
@@ -107,7 +107,7 @@ export const SpectrographControls: React.FC<SpectrographControlsProps> = ({
           aria-label="Colormap Palette"
           className="select-compact"
           value={prefs.colormap}
-          onChange={(e) => updateSpectrographPrefs({ colormap: e.target.value as ColormapId })}
+          onChange={(e) => updateSpectrogramPrefs({ colormap: e.target.value as ColormapId })}
         >
           {COLORMAP_OPTIONS.map((c) => (
             <option key={c.id} value={c.id}>
@@ -122,8 +122,8 @@ export const SpectrographControls: React.FC<SpectrographControlsProps> = ({
         maxFreq={prefs.maxFreq}
         nyquist={nyquist}
         freqScale={prefs.freqScale}
-        onRangeChange={(minFreq, maxFreq) => updateSpectrographPrefs({ minFreq, maxFreq })}
-        onScaleChange={(freqScale) => updateSpectrographPrefs({ freqScale })}
+        onRangeChange={(minFreq, maxFreq) => updateSpectrogramPrefs({ minFreq, maxFreq })}
+        onScaleChange={(freqScale) => updateSpectrogramPrefs({ freqScale })}
       />
 
       <DbRangeControls
@@ -131,27 +131,27 @@ export const SpectrographControls: React.FC<SpectrographControlsProps> = ({
         maxDb={prefs.maxDb}
         defaultMinDb={-95}
         defaultMaxDb={-5}
-        onChange={(minDb, maxDb) => updateSpectrographPrefs({ minDb, maxDb })}
+        onChange={(minDb, maxDb) => updateSpectrogramPrefs({ minDb, maxDb })}
       />
 
       <div className="control-group">
         <button
           type="button"
           className="btn desktop-only-btn"
-          title="Clear Spectrograph History"
+          title="Clear Spectrogram History"
           onClick={onClearHistory}
         >
           <Trash2 size={13} /> Clear
         </button>
         <button
           type="button"
-          className={`btn desktop-only-btn ${spectrographPaused ? 'btn-active-mic' : ''}`}
+          className={`btn desktop-only-btn ${spectrogramPaused ? 'btn-active-mic' : ''}`}
           disabled={!isAudioActive && frameCount === 0}
           title="Pause / Resume (Space)"
-          onClick={toggleSpectrographPause}
+          onClick={toggleSpectrogramPause}
         >
-          {spectrographPaused ? <Play size={13} /> : <Pause size={13} />}
-          <span>{spectrographPaused ? 'Resume' : 'Pause'}</span>
+          {spectrogramPaused ? <Play size={13} /> : <Pause size={13} />}
+          <span>{spectrogramPaused ? 'Resume' : 'Pause'}</span>
         </button>
       </div>
 

@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { SpectrumAnalyzerView } from './components/analyzer/SpectrumAnalyzerView';
 import { AppHeader } from './components/layout/AppHeader';
-import { SpectrographView } from './components/spectrograph/SpectrographView';
+import { SpectrogramView } from './components/spectrogram/SpectrogramView';
 import { MusicalTunerView } from './components/tuner/MusicalTunerView';
 import { AudioProvider, useAudio } from './contexts/AudioContext';
 import { PreferencesProvider, usePreferencesContext } from './contexts/PreferencesContext';
@@ -10,14 +10,14 @@ const AppShell: React.FC = () => {
   const { preferences } = usePreferencesContext();
   const {
     isAudioActive,
-    spectrographBuffer,
+    spectrogramBuffer,
     errorMsg,
     clearError,
     toggleAnalyzerPause,
-    toggleSpectrographPause,
+    toggleSpectrogramPause,
   } = useAudio();
 
-  // Space key pauses/resumes Spectrum Analyzer or Spectrograph on desktop
+  // Space key pauses/resumes Spectrum Analyzer or Spectrogram on desktop
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code !== 'Space' && e.key !== ' ') return;
@@ -35,11 +35,11 @@ const AppShell: React.FC = () => {
         e.preventDefault();
         toggleAnalyzerPause();
       } else if (
-        preferences.activeTab === 'spectrograph' &&
-        (isAudioActive || spectrographBuffer.getFrameCount() > 0)
+        preferences.activeTab === 'spectrogram' &&
+        (isAudioActive || spectrogramBuffer.getFrameCount() > 0)
       ) {
         e.preventDefault();
-        toggleSpectrographPause();
+        toggleSpectrogramPause();
       }
     };
 
@@ -48,9 +48,9 @@ const AppShell: React.FC = () => {
   }, [
     preferences.activeTab,
     isAudioActive,
-    spectrographBuffer,
+    spectrogramBuffer,
     toggleAnalyzerPause,
-    toggleSpectrographPause,
+    toggleSpectrogramPause,
   ]);
 
   return (
@@ -68,7 +68,7 @@ const AppShell: React.FC = () => {
 
       <main className="app-main">
         {preferences.activeTab === 'analyzer' && <SpectrumAnalyzerView />}
-        {preferences.activeTab === 'spectrograph' && <SpectrographView />}
+        {preferences.activeTab === 'spectrogram' && <SpectrogramView />}
         {preferences.activeTab === 'tuner' && <MusicalTunerView />}
       </main>
     </div>

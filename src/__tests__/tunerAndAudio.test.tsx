@@ -2,7 +2,7 @@ import React, { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AudioEngine } from '../audio/AudioEngine';
-import { SpectrographBuffer } from '../audio/SpectrographBuffer';
+import { SpectrogramBuffer } from '../audio/SpectrogramBuffer';
 import { AnalyzerControls } from '../components/analyzer/AnalyzerControls';
 import { SpectrumAnalyzerView } from '../components/analyzer/SpectrumAnalyzerView';
 import {
@@ -14,12 +14,12 @@ import {
 import { FrequencyZoomControls } from '../components/controls/FrequencyZoomControls';
 import { FreqAxisZoomBar } from '../components/controls/FreqAxisZoomBar';
 import { MobileControlsBar } from '../components/controls/MobileControlsBar';
-import { SpectrographControls } from '../components/spectrograph/SpectrographControls';
-import { SpectrographView } from '../components/spectrograph/SpectrographView';
+import { SpectrogramControls } from '../components/spectrogram/SpectrogramControls';
+import { SpectrogramView } from '../components/spectrogram/SpectrogramView';
 import {
-  getSpectrographPeakDbInRange,
-  renderSpectrographCanvas,
-} from '../components/spectrograph/spectrographRenderer';
+  getSpectrogramPeakDbInRange,
+  renderSpectrogramCanvas,
+} from '../components/spectrogram/spectrogramRenderer';
 import { ToneGeneratorCard } from '../components/tuner/ToneGeneratorCard';
 import { MusicalTunerView } from '../components/tuner/MusicalTunerView';
 import { AudioProvider, useAudio } from '../contexts/AudioContext';
@@ -412,10 +412,10 @@ describe('Tuner Defaults, Tone Frequency Slider & Focus-Loss Behavior', () => {
 
     const migrated = mergePreferences({
       analyzer: { minFreq: 20, maxFreq: 24000 },
-      spectrograph: { minFreq: 20, maxFreq: 24000 },
+      spectrogram: { minFreq: 20, maxFreq: 24000 },
     });
     expect(migrated.analyzer.maxFreq).toBe(20000);
-    expect(migrated.spectrograph.maxFreq).toBe(20000);
+    expect(migrated.spectrogram.maxFreq).toBe(20000);
   });
 
   it('groups AnalyzerControls into a toggles/buttons row above a range sliders row', () => {
@@ -458,11 +458,11 @@ describe('Tuner Defaults, Tone Frequency Slider & Focus-Loss Behavior', () => {
     expect(exportGroup.textContent).toContain('Export');
   });
 
-  it('places the Clear button to the left of the Pause button in SpectrographControls', () => {
+  it('places the Clear button to the left of the Pause button in SpectrogramControls', () => {
     render(
       <PreferencesProvider>
         <AudioProvider>
-          <SpectrographControls
+          <SpectrogramControls
             controlsOpen={true}
             nyquist={20000}
             frameCount={10}
@@ -500,10 +500,10 @@ describe('Tuner Defaults, Tone Frequency Slider & Focus-Loss Behavior', () => {
         isPaused={false}
         canPause={true}
         controlsOpen={false}
-        pauseLabel="Pause Spectrograph"
-        resumeLabel="Resume Spectrograph"
-        toggleControlsLabel="Toggle Spectrograph Controls"
-        clearLabel="Clear Spectrograph History"
+        pauseLabel="Pause Spectrogram"
+        resumeLabel="Resume Spectrogram"
+        toggleControlsLabel="Toggle Spectrogram Controls"
+        clearLabel="Clear Spectrogram History"
         onTogglePause={() => {}}
         onToggleControls={() => {}}
         onClear={onClear}
@@ -590,7 +590,7 @@ describe('Tuner Defaults, Tone Frequency Slider & Focus-Loss Behavior', () => {
     expect(renderChartSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('scales active Spectrum Analyzer cursor reticle and renders active Spectrograph target in PNG exports', () => {
+  it('scales active Spectrum Analyzer cursor reticle and renders active Spectrogram target in PNG exports', () => {
     expect(scaleSpectrumCursor(null, 390, 580, 1500, 1125)).toBeNull();
     expect(scaleSpectrumCursor({ x: 5, y: 5 }, 390, 580, 1500, 1125)).toBeNull();
 
@@ -605,7 +605,7 @@ describe('Tuner Defaults, Tone Frequency Slider & Focus-Loss Behavior', () => {
     expect(scaled!.x).toBeCloseTo(dstBounds.padLeft + dstBounds.plotW * 0.5, 4);
     expect(scaled!.y).toBeCloseTo(dstBounds.padTop + dstBounds.plotH * 0.25, 4);
 
-    // Spectrograph canvas renders reticle/badges when target is active
+    // Spectrogram canvas renders reticle/badges when target is active
     const arcSpy = vi.fn();
     const fillTextSpy = vi.fn();
     const mockCtx = {
@@ -635,8 +635,8 @@ describe('Tuner Defaults, Tone Frequency Slider & Focus-Loss Behavior', () => {
     } as unknown as CanvasRenderingContext2D;
 
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
-    const buffer = new SpectrographBuffer(60, 64, 48000, 60);
-    renderSpectrographCanvas(
+    const buffer = new SpectrogramBuffer(60, 64, 48000, 60);
+    renderSpectrogramCanvas(
       mockCtx,
       { current: null },
       { current: null },
@@ -644,7 +644,7 @@ describe('Tuner Defaults, Tone Frequency Slider & Focus-Loss Behavior', () => {
         width: 1500,
         height: 750,
         dpr: 1,
-        prefs: DEFAULT_PREFERENCES.spectrograph,
+        prefs: DEFAULT_PREFERENCES.spectrogram,
         buffer,
         sampleRate: 48000,
         fftSize: 128,
@@ -751,7 +751,7 @@ describe('Tuner Defaults, Tone Frequency Slider & Focus-Loss Behavior', () => {
     vi.unstubAllGlobals();
   });
 
-  it('toggles, moves, and preserves the target on SpectrographView across mouseleave and PNG export', () => {
+  it('toggles, moves, and preserves the target on SpectrogramView across mouseleave and PNG export', () => {
     class MockResizeObserver {
       observe() {}
       disconnect() {}
@@ -764,7 +764,7 @@ describe('Tuner Defaults, Tone Frequency Slider & Focus-Loss Behavior', () => {
     render(
       <PreferencesProvider>
         <AudioProvider>
-          <SpectrographView />
+          <SpectrogramView />
         </AudioProvider>
       </PreferencesProvider>
     );
@@ -870,14 +870,14 @@ describe('Tuner Defaults, Tone Frequency Slider & Focus-Loss Behavior', () => {
     expect(specPeak!).toBeLessThanOrEqual(-54);
     expect(computePaddedExportMaxDb(specPeak, -100, 0)).toBe(-40);
 
-    // Spectrograph peak detection in range
-    const buffer = new SpectrographBuffer(60, 256, 48000, 60);
+    // Spectrogram peak detection in range
+    const buffer = new SpectrogramBuffer(60, 256, 48000, 60);
     const frame = new Float32Array(256).fill(-88);
     frame[15] = -54;
     buffer.pushFrame(frame, 1000, true);
-    const spectroPeak = getSpectrographPeakDbInRange(
+    const spectroPeak = getSpectrogramPeakDbInRange(
       buffer,
-      DEFAULT_PREFERENCES.spectrograph,
+      DEFAULT_PREFERENCES.spectrogram,
       48000,
       512,
       0,
@@ -938,7 +938,7 @@ describe('Tuner Defaults, Tone Frequency Slider & Focus-Loss Behavior', () => {
     expect(fontsUsed).toContain(`bold ${EXPORT_LABEL_FONT_PX}px JetBrains Mono, monospace`);
   });
 
-  it('supports desktop mouse click-and-drag to move the reticle on SpectrumAnalyzerView and SpectrographView', () => {
+  it('supports desktop mouse click-and-drag to move the reticle on SpectrumAnalyzerView and SpectrogramView', () => {
     class MockResizeObserver {
       observe() {}
       disconnect() {}
@@ -1012,11 +1012,11 @@ describe('Tuner Defaults, Tone Frequency Slider & Focus-Loss Behavior', () => {
     expect(at620).not.toBeNull();
     expect(at620).not.toBe(at450);
 
-    // 2. SpectrographView desktop click-and-drag on active target moves it
+    // 2. SpectrogramView desktop click-and-drag on active target moves it
     render(
       <PreferencesProvider>
         <AudioProvider>
-          <SpectrographView />
+          <SpectrogramView />
         </AudioProvider>
       </PreferencesProvider>
     );

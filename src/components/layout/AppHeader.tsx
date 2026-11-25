@@ -7,7 +7,7 @@ import { AudioSettingsPopover } from './AudioSettingsPopover';
 
 const NAV_TABS: readonly { id: AppTab; label: string; Icon: React.FC<{ size?: number }> }[] = [
   { id: 'analyzer', label: 'Spectrum Analyzer', Icon: BarChart3 },
-  { id: 'spectrograph', label: 'Spectrograph', Icon: Activity },
+  { id: 'spectrogram', label: 'Spectrogram', Icon: Activity },
   { id: 'tuner', label: 'Tuner', Icon: Gauge },
 ];
 

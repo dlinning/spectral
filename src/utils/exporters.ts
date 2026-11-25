@@ -1,5 +1,5 @@
-import { SpectrographBuffer } from '../audio/SpectrographBuffer';
-import { SpectrographPreferences, SpectrumAnalyzerPreferences } from '../types/preferences';
+import { SpectrogramBuffer } from '../audio/SpectrogramBuffer';
+import { SpectrogramPreferences, SpectrumAnalyzerPreferences } from '../types/preferences';
 
 export interface SpectrumExportMeta {
   exportedAt: string;
@@ -12,7 +12,7 @@ export interface SpectrumExportMeta {
   octaveSmoothing: string;
 }
 
-export interface SpectrographExportMeta {
+export interface SpectrogramExportMeta {
   exportedAt: string;
   sampleRate: number;
   fftSize: number;
@@ -229,10 +229,10 @@ function selectBinIndices(
   return sampled;
 }
 
-export function formatSpectrographCSV(
-  buffer: SpectrographBuffer,
+export function formatSpectrogramCSV(
+  buffer: SpectrogramBuffer,
   fftSize: number,
-  prefs: SpectrographPreferences,
+  prefs: SpectrogramPreferences,
   referenceNowMs?: number
 ): string {
   const slice = buffer.getHistorySlice(prefs.historyDurationSec, referenceNowMs);
@@ -276,10 +276,10 @@ export function formatSpectrographCSV(
   return lines.join('\n');
 }
 
-export function formatSpectrographJSON(
-  buffer: SpectrographBuffer,
+export function formatSpectrogramJSON(
+  buffer: SpectrogramBuffer,
   fftSize: number,
-  prefs: SpectrographPreferences,
+  prefs: SpectrogramPreferences,
   referenceNowMs?: number
 ): string {
   const slice = buffer.getHistorySlice(prefs.historyDurationSec, referenceNowMs);
@@ -310,7 +310,7 @@ export function formatSpectrographJSON(
     });
   }
 
-  const meta: SpectrographExportMeta = {
+  const meta: SpectrogramExportMeta = {
     exportedAt: new Date().toISOString(),
     sampleRate: slice.sampleRate,
     fftSize,

@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "High-precision PWA Spectrum Analyzer, 60s Spectrograph, and Chromatic Musical Tuner with WebAssembly DSP",
+  "description": "PWA Spectrum Analyzer, Spectrogram, and Chromatic Musical Tuner; built with WebAssembly DSP",
   "scripts": {
     "build:wasm": "asc assembly/index.ts --target release -O3 --importMemory --initialMemory 256 --maximumMemory 512 --outFile public/wasm/spectral_dsp.wasm",
     "dev": "yarn build:wasm && vite",

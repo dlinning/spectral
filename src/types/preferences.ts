@@ -1,4 +1,4 @@
-export type AppTab = 'analyzer' | 'spectrograph' | 'tuner';
+export type AppTab = 'analyzer' | 'spectrogram' | 'tuner';
 
 export type FreqScale = 'log' | 'linear';
 
@@ -35,7 +35,7 @@ export interface SpectrumAnalyzerPreferences {
   showNoteOverlay: boolean;
 }
 
-export interface SpectrographPreferences {
+export interface SpectrogramPreferences {
   minFreq: number;
   maxFreq: number;
   freqScale: FreqScale;
@@ -61,7 +61,7 @@ export interface UserPreferences {
   activeTab: AppTab;
   audio: AudioPreferences;
   analyzer: SpectrumAnalyzerPreferences;
-  spectrograph: SpectrographPreferences;
+  spectrogram: SpectrogramPreferences;
   tuner: MusicalTunerPreferences;
 }
 
@@ -88,7 +88,7 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
     fillArea: true,
     showNoteOverlay: true,
   },
-  spectrograph: {
+  spectrogram: {
     minFreq: 20,
     maxFreq: 20000,
     freqScale: 'log',

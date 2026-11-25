@@ -3,14 +3,14 @@
  * and frame timestamps, allowing retroactive zoom, scale switching, colormap changes,
  * dynamic range adjustments, and full-resolution CSV/JSON exports.
  */
-export interface SpectrographSlice {
+export interface SpectrogramSlice {
   frames: Float32Array[];
   timestampsMs: number[];
   numBins: number;
   sampleRate: number;
 }
 
-export class SpectrographBuffer {
+export class SpectrogramBuffer {
   public readonly maxFrames: number;
   private numBins: number;
   private sampleRate: number;
@@ -149,7 +149,7 @@ export class SpectrographBuffer {
   /**
    * Extracts copied frames and timestamps for a requested history window (5s, 15s, 30s, 60s).
    */
-  public getHistorySlice(durationSec: number, referenceNowMs?: number): SpectrographSlice {
+  public getHistorySlice(durationSec: number, referenceNowMs?: number): SpectrogramSlice {
     const indices = this.getIndicesForDuration(durationSec, referenceNowMs);
     const frames: Float32Array[] = [];
     const timestampsMs: number[] = [];

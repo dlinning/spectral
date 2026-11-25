@@ -23,12 +23,12 @@ export function mergePreferences(
 
   const audio = isPlainObject(stored.audio) ? stored.audio : {};
   const analyzer = isPlainObject(stored.analyzer) ? stored.analyzer : {};
-  const spectrograph = isPlainObject(stored.spectrograph) ? stored.spectrograph : {};
+  const spectrogram = isPlainObject(stored.spectrogram) ? stored.spectrogram : {};
   const tuner = isPlainObject(stored.tuner) ? stored.tuner : {};
 
   const validTab =
     stored.activeTab === 'analyzer' ||
-    stored.activeTab === 'spectrograph' ||
+    stored.activeTab === 'spectrogram' ||
     stored.activeTab === 'tuner'
       ? stored.activeTab
       : defaults.activeTab;
@@ -64,21 +64,21 @@ export function mergePreferences(
   mergedAnalyzer.minFreq = analyzerMin;
   mergedAnalyzer.maxFreq = analyzerMax;
 
-  const mergedSpectrograph = {
-    ...defaults.spectrograph,
-    ...spectrograph,
+  const mergedSpectrogram = {
+    ...defaults.spectrogram,
+    ...spectrogram,
   };
   const [spectroMin, spectroMax] = clampFreqRange(
-    Number.isFinite(mergedSpectrograph.minFreq)
-      ? mergedSpectrograph.minFreq
-      : defaults.spectrograph.minFreq,
-    Number.isFinite(mergedSpectrograph.maxFreq)
-      ? mergedSpectrograph.maxFreq
-      : defaults.spectrograph.maxFreq,
+    Number.isFinite(mergedSpectrogram.minFreq)
+      ? mergedSpectrogram.minFreq
+      : defaults.spectrogram.minFreq,
+    Number.isFinite(mergedSpectrogram.maxFreq)
+      ? mergedSpectrogram.maxFreq
+      : defaults.spectrogram.maxFreq,
     MAX_DISPLAY_FREQ_HZ
   );
-  mergedSpectrograph.minFreq = spectroMin;
-  mergedSpectrograph.maxFreq = spectroMax;
+  mergedSpectrogram.minFreq = spectroMin;
+  mergedSpectrogram.maxFreq = spectroMax;
 
   return {
     version: 1,
@@ -88,7 +88,7 @@ export function mergePreferences(
       ...audio,
     },
     analyzer: mergedAnalyzer,
-    spectrograph: mergedSpectrograph,
+    spectrogram: mergedSpectrogram,
     tuner: mergedTuner,
   };
 }

@@ -8,8 +8,8 @@ import {
   computePaddedExportMaxDb,
   createHighResExportCanvas,
   exportCanvasToPNG,
-  formatSpectrographCSV,
-  formatSpectrographJSON,
+  formatSpectrogramCSV,
+  formatSpectrogramJSON,
   getPngExportDimensions,
   triggerFileDownload,
 } from '../../utils/exporters';
@@ -22,30 +22,30 @@ import {
 } from '../../utils/music';
 import { MobileControlsBar } from '../controls/MobileControlsBar';
 import { EmptyAudioOverlay } from '../layout/EmptyAudioOverlay';
-import { SpectrographControls } from './SpectrographControls';
+import { SpectrogramControls } from './SpectrogramControls';
 import {
-  SpectrographHoverInfo,
-  getSpectrographPeakDbInRange,
-  getSpectrographPlotBounds,
-  getSpectrographTargetPoint,
-  inspectSpectrographPoint,
-  renderSpectrographCanvas,
-} from './spectrographRenderer';
+  SpectrogramHoverInfo,
+  getSpectrogramPeakDbInRange,
+  getSpectrogramPlotBounds,
+  getSpectrogramTargetPoint,
+  inspectSpectrogramPoint,
+  renderSpectrogramCanvas,
+} from './spectrogramRenderer';
 
-export const SpectrographView: React.FC = () => {
-  const { preferences, updateSpectrographPrefs } = usePreferencesContext();
+export const SpectrogramView: React.FC = () => {
+  const { preferences, updateSpectrogramPrefs } = usePreferencesContext();
   const {
-    spectrographBuffer: buffer,
+    spectrogramBuffer: buffer,
     sampleRate,
     isAudioActive,
-    spectrographPaused: isPaused,
-    toggleSpectrographPause,
-    clearSpectrographBuffer,
+    spectrogramPaused: isPaused,
+    toggleSpectrogramPause,
+    clearSpectrogramBuffer,
     startMicrophone,
   } = useAudio();
   const frameTick = useAudioFrame();
 
-  const prefs = preferences.spectrograph;
+  const prefs = preferences.spectrogram;
   const fftSize = preferences.audio.fftSize;
   const nyquist = Math.min(MAX_DISPLAY_FREQ_HZ, sampleRate / 2);
 
@@ -59,7 +59,7 @@ export const SpectrographView: React.FC = () => {
     typeof window !== 'undefined' ? window.innerWidth > 900 && window.innerHeight > 540 : true
   );
   const [scrollBackSec, setScrollBackSec] = useState(0);
-  const [hoverInfo, setHoverInfo] = useState<SpectrographHoverInfo | null>(null);
+  const [hoverInfo, setHoverInfo] = useState<SpectrogramHoverInfo | null>(null);
 
   const dragRef = useRef<{
     active: boolean;
@@ -103,14 +103,14 @@ export const SpectrographView: React.FC = () => {
     }
   }, [frameCount, scrollBackSec]);
 
-  // Right-to-left spectrograph rendering: X = Time (newest on right), Y = Frequency
+  // Right-to-left spectrogram rendering: X = Time (newest on right), Y = Frequency
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const prepared = prepareCanvas2d(canvas, size.width, size.height);
     if (!prepared) return;
 
-    renderSpectrographCanvas(prepared.ctx, offscreenRef, imageDataRef, {
+    renderSpectrogramCanvas(prepared.ctx, offscreenRef, imageDataRef, {
       width: size.width,
       height: size.height,
       dpr: prepared.dpr,
@@ -144,7 +144,7 @@ export const SpectrographView: React.FC = () => {
     const rect = canvas.getBoundingClientRect();
     const x = clientX - rect.left;
     const y = clientY - rect.top;
-    const { padLeft, padTop, plotW, plotH } = getSpectrographPlotBounds(rect.width, rect.height);
+    const { padLeft, padTop, plotW, plotH } = getSpectrogramPlotBounds(rect.width, rect.height);
     return x >= padLeft && x <= padLeft + plotW && y >= padTop && y <= padTop + plotH;
   };
 
@@ -152,7 +152,7 @@ export const SpectrographView: React.FC = () => {
     const canvas = canvasRef.current;
     if (!canvas || !hoverInfo) return false;
     const rect = canvas.getBoundingClientRect();
-    const pt = getSpectrographTargetPoint(
+    const pt = getSpectrogramTargetPoint(
       hoverInfo,
       rect.width,
       rect.height,
@@ -168,7 +168,7 @@ export const SpectrographView: React.FC = () => {
   const inspectAtClient = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const info = inspectSpectrographPoint(
+    const info = inspectSpectrogramPoint(
       buffer,
       clientX,
       clientY,
@@ -188,7 +188,7 @@ export const SpectrographView: React.FC = () => {
   const applyDrag = (clientX: number, clientY: number) => {
     if (!dragRef.current?.active || !canvasRef.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
-    const { plotW, plotH } = getSpectrographPlotBounds(rect.width, rect.height);
+    const { plotW, plotH } = getSpectrogramPlotBounds(rect.width, rect.height);
 
     // Horizontal drag scrubs time history (drag right = pull older data in)
     const dxNorm = (clientX - dragRef.current.startX) / plotW;
@@ -210,7 +210,7 @@ export const SpectrographView: React.FC = () => {
       nyquist,
       prefs.freqScale
     );
-    updateSpectrographPrefs({ minFreq: lo, maxFreq: hi });
+    updateSpectrogramPrefs({ minFreq: lo, maxFreq: hi });
   };
 
   // Mouse Wheel zooms Frequency axis (Y) centered at cursor Y
@@ -219,7 +219,7 @@ export const SpectrographView: React.FC = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const { padTop, plotH } = getSpectrographPlotBounds(rect.width, rect.height);
+    const { padTop, plotH } = getSpectrogramPlotBounds(rect.width, rect.height);
     const normY = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top - padTop) / plotH));
     const zoomFactor = e.deltaY > 0 ? 1.15 : 0.87;
     const anchorFreq = normToFreq(normY, prefs.minFreq, prefs.maxFreq, prefs.freqScale);
@@ -231,7 +231,7 @@ export const SpectrographView: React.FC = () => {
       nyquist,
       prefs.freqScale
     );
-    updateSpectrographPrefs({ minFreq: lo, maxFreq: hi });
+    updateSpectrogramPrefs({ minFreq: lo, maxFreq: hi });
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -308,7 +308,7 @@ export const SpectrographView: React.FC = () => {
       const t2 = e.touches[1];
       const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
       const rect = canvasRef.current.getBoundingClientRect();
-      const { padTop, plotH } = getSpectrographPlotBounds(rect.width, rect.height);
+      const { padTop, plotH } = getSpectrogramPlotBounds(rect.width, rect.height);
       const midY = (t1.clientY + t2.clientY) / 2 - rect.top;
       const normY = Math.max(0, Math.min(1, 1 - (midY - padTop) / plotH));
       const centerFreq = normToFreq(normY, prefs.minFreq, prefs.maxFreq, prefs.freqScale);
@@ -353,7 +353,7 @@ export const SpectrographView: React.FC = () => {
         nyquist,
         prefs.freqScale
       );
-      updateSpectrographPrefs({ minFreq: lo, maxFreq: hi });
+      updateSpectrogramPrefs({ minFreq: lo, maxFreq: hi });
     }
   };
 
@@ -381,8 +381,8 @@ export const SpectrographView: React.FC = () => {
     const tempOffscreenRef = { current: null as HTMLCanvasElement | null };
     const tempImageDataRef = { current: null as ImageData | null };
     const { width: exportW, height: exportH } = getPngExportDimensions(size.width, size.height);
-    const exportBounds = getSpectrographPlotBounds(exportW, exportH, EXPORT_LABEL_FONT_PX);
-    const peakDb = getSpectrographPeakDbInRange(
+    const exportBounds = getSpectrogramPlotBounds(exportW, exportH, EXPORT_LABEL_FONT_PX);
+    const peakDb = getSpectrogramPeakDbInRange(
       buffer,
       prefs,
       sampleRate,
@@ -399,9 +399,9 @@ export const SpectrographView: React.FC = () => {
     const exportCanvas = createHighResExportCanvas(
       size.width,
       size.height,
-      `Spectrograph • ${formatFrequency(prefs.minFreq)} – ${formatFrequency(prefs.maxFreq)} • ${prefs.historyDurationSec}s`,
+      `Spectrogram • ${formatFrequency(prefs.minFreq)} – ${formatFrequency(prefs.maxFreq)} • ${prefs.historyDurationSec}s`,
       (ctx, width, height, dpr) => {
-        renderSpectrographCanvas(ctx, tempOffscreenRef, tempImageDataRef, {
+        renderSpectrogramCanvas(ctx, tempOffscreenRef, tempImageDataRef, {
           width,
           height,
           dpr,
@@ -420,24 +420,24 @@ export const SpectrographView: React.FC = () => {
       exportBounds.padLeft,
       exportBounds.padRight
     );
-    exportCanvasToPNG(exportCanvas, 'spectral_spectrograph');
+    exportCanvasToPNG(exportCanvas, 'spectral_spectrogram');
   };
 
   const handleExportCSV = () => {
-    const csv = formatSpectrographCSV(buffer, fftSize, prefs, viewEndReferenceMs);
+    const csv = formatSpectrogramCSV(buffer, fftSize, prefs, viewEndReferenceMs);
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
-    triggerFileDownload(csv, `spectral_spectrograph_${ts}.csv`, 'text/csv;charset=utf-8;');
+    triggerFileDownload(csv, `spectral_spectrogram_${ts}.csv`, 'text/csv;charset=utf-8;');
   };
 
   const handleExportJSON = () => {
-    const json = formatSpectrographJSON(buffer, fftSize, prefs, viewEndReferenceMs);
+    const json = formatSpectrogramJSON(buffer, fftSize, prefs, viewEndReferenceMs);
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
-    triggerFileDownload(json, `spectral_spectrograph_${ts}.json`, 'application/json');
+    triggerFileDownload(json, `spectral_spectrogram_${ts}.json`, 'application/json');
   };
 
   const handleClearHistory = () => {
     setScrollBackSec(0);
-    clearSpectrographBuffer();
+    clearSpectrogramBuffer();
   };
 
   return (
@@ -504,7 +504,7 @@ export const SpectrographView: React.FC = () => {
 
         {!isAudioActive && buffer.getFrameCount() === 0 && (
           <EmptyAudioOverlay
-            title="Spectrograph"
+            title="Spectrogram"
             description="Enable the microphone to begin. Drag horizontally to scroll back in time, or zoom/filter frequency and dB ranges."
             onStartMic={() => void startMicrophone()}
           />
@@ -516,16 +516,16 @@ export const SpectrographView: React.FC = () => {
         isPaused={isPaused}
         canPause={isAudioActive || frameCount > 0}
         controlsOpen={controlsOpen}
-        pauseLabel="Pause Spectrograph"
-        resumeLabel="Resume Spectrograph"
-        toggleControlsLabel="Toggle Spectrograph Controls"
-        clearLabel="Clear Spectrograph History"
-        onTogglePause={toggleSpectrographPause}
+        pauseLabel="Pause Spectrogram"
+        resumeLabel="Resume Spectrogram"
+        toggleControlsLabel="Toggle Spectrogram Controls"
+        clearLabel="Clear Spectrogram History"
+        onTogglePause={toggleSpectrogramPause}
         onToggleControls={() => setControlsOpen((v) => !v)}
         onClear={handleClearHistory}
       />
 
-      <SpectrographControls
+      <SpectrogramControls
         controlsOpen={controlsOpen}
         nyquist={nyquist}
         frameCount={frameCount}
