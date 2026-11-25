@@ -1,15 +1,15 @@
-import { Activity, BarChart3, EighthNote, Mic, MicOff, Settings, Volume2 } from 'lucide-react';
-import React, { useState } from 'react';
-import { useAudio } from '../../contexts/AudioContext';
-import { usePreferencesContext } from '../../contexts/PreferencesContext';
-import { AppTab } from '../../types/preferences';
-import { AudioSettingsPopover } from './AudioSettingsPopover';
+import { Activity, BarChart3, EighthNote, Mic, MicOff, Settings, Volume2 } from "lucide-react";
+import React, { useState } from "react";
+import { useAudio } from "../../contexts/AudioContext";
+import { usePreferencesContext } from "../../contexts/PreferencesContext";
+import { AppTab } from "../../types/preferences";
+import { AudioSettingsPopover } from "./AudioSettingsPopover";
 
 const NAV_TABS: readonly { id: AppTab; label: string; Icon: React.FC<{ size?: number }> }[] = [
-  { id: 'analyzer', label: 'Spectrum Analyzer', Icon: BarChart3 },
-  { id: 'spectrogram', label: 'Spectrogram', Icon: Activity },
-  { id: 'tuner', label: 'Tuner', Icon: EighthNote },
-  { id: 'decibels', label: 'Decibels', Icon: Volume2 },
+  { id: "analyzer", label: "Analyzer", Icon: BarChart3 },
+  { id: "spectrogram", label: "Spectrogram", Icon: Activity },
+  { id: "tuner", label: "Tuner", Icon: EighthNote },
+  { id: "decibels", label: "Decibels", Icon: Volume2 },
 ];
 
 export const AppHeader: React.FC = () => {
@@ -33,7 +33,7 @@ export const AppHeader: React.FC = () => {
             type="button"
             role="tab"
             aria-selected={preferences.activeTab === id}
-            className={`tab-btn ${preferences.activeTab === id ? 'active' : ''}`}
+            className={`tab-btn ${preferences.activeTab === id ? "active" : ""}`}
             onClick={() => setActiveTab(id)}
           >
             <Icon size={15} />
@@ -43,7 +43,7 @@ export const AppHeader: React.FC = () => {
       </nav>
 
       <div className="audio-controls-bar">
-        {sourceKind === 'mic' ? (
+        {sourceKind === "mic" ? (
           <button type="button" className="btn btn-active-mic" onClick={stopAudio}>
             <MicOff size={14} />
             <span className="desktop-only-label">Stop Mic</span>
