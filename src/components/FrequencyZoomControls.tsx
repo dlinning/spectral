@@ -1,7 +1,7 @@
 import React from 'react';
 import { RotateCcw } from 'lucide-react';
 import { FreqScale } from '../types/preferences';
-import { clampFreqRange } from '../utils/music';
+import { formatFrequency } from '../utils/music';
 
 interface FrequencyZoomControlsProps {
   minFreq: number;
@@ -12,13 +12,6 @@ interface FrequencyZoomControlsProps {
   onScaleChange: (scale: FreqScale) => void;
 }
 
-const PRESETS: { label: string; min: number; max: number }[] = [
-  { label: 'Full', min: 20, max: 20000 },
-  { label: 'Bass', min: 20, max: 250 },
-  { label: 'Mid', min: 200, max: 4000 },
-  { label: 'High', min: 2000, max: 20000 },
-];
-
 export const FrequencyZoomControls: React.FC<FrequencyZoomControlsProps> = ({
   minFreq,
   maxFreq,
@@ -27,19 +20,30 @@ export const FrequencyZoomControls: React.FC<FrequencyZoomControlsProps> = ({
   onRangeChange,
   onScaleChange,
 }) => {
-  const defaultMax = Math.min(20000, Math.round(nyquist));
-  const isZoomed = minFreq > 22 || maxFreq < defaultMax - 50;
+  const maxSliderHz = Math.max(1000, Math.floor(nyquist / 100) * 100);
+  const defaultMaxHz = Math.min(20000, maxSliderHz);
 
-  const handleMinChange = (val: number) => {
-    if (!Number.isFinite(val)) return;
-    const [lo, hi] = clampFreqRange(val, maxFreq, nyquist);
-    onRangeChange(lo, hi);
+  // Map 0 on slider to 20 Hz floor, and multiples of 100 Hz otherwise
+  const sliderToHz = (val: number) => (val <= 0 ? 20 : val);
+  const hzToSlider = (hz: number) =>
+    hz <= 20 ? 0 : Math.min(maxSliderHz, Math.round(hz / 100) * 100);
+
+  const minSliderVal = Math.min(maxSliderHz - 100, hzToSlider(minFreq));
+  const maxSliderVal = Math.max(minSliderVal + 100, hzToSlider(maxFreq));
+
+  const minPct = (minSliderVal / maxSliderHz) * 100;
+  const maxPct = (maxSliderVal / maxSliderHz) * 100;
+
+  const isZoomed = minFreq > 25 || Math.abs(maxFreq - defaultMaxHz) > 150;
+
+  const handleMinSlide = (rawVal: number) => {
+    const snapped = Math.min(rawVal, maxSliderVal - 100);
+    onRangeChange(sliderToHz(snapped), sliderToHz(maxSliderVal));
   };
 
-  const handleMaxChange = (val: number) => {
-    if (!Number.isFinite(val)) return;
-    const [lo, hi] = clampFreqRange(minFreq, val, nyquist);
-    onRangeChange(lo, hi);
+  const handleMaxSlide = (rawVal: number) => {
+    const snapped = Math.max(rawVal, minSliderVal + 100);
+    onRangeChange(sliderToHz(minSliderVal), sliderToHz(snapped));
   };
 
   return (
@@ -64,55 +68,54 @@ export const FrequencyZoomControls: React.FC<FrequencyZoomControlsProps> = ({
         </div>
       </div>
 
-      <div className="control-group">
-        <span className="control-label">Freq Hz</span>
-        <input
-          type="number"
-          aria-label="Minimum Frequency Hz"
-          className="input-compact freq-input"
-          min={20}
-          max={Math.max(40, maxFreq - 20)}
-          value={Math.round(minFreq)}
-          onChange={(e) => handleMinChange(Number(e.target.value))}
-        />
-        <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>–</span>
-        <input
-          type="number"
-          aria-label="Maximum Frequency Hz"
-          className="input-compact freq-input"
-          min={minFreq + 20}
-          max={Math.round(nyquist)}
-          value={Math.round(maxFreq)}
-          onChange={(e) => handleMaxChange(Number(e.target.value))}
-        />
-        <div className="segmented" role="group" aria-label="Frequency Zoom Presets">
-          {PRESETS.map((p) => {
-            const targetMax = Math.min(p.max, Math.round(nyquist));
-            const active =
-              Math.abs(minFreq - p.min) < 5 && Math.abs(maxFreq - targetMax) < 50;
-            return (
-              <button
-                key={p.label}
-                type="button"
-                className={`seg-btn ${active ? 'active' : ''}`}
-                onClick={() => onRangeChange(p.min, targetMax)}
-              >
-                {p.label}
-              </button>
-            );
-          })}
+      <div className="control-group freq-zoom-group">
+        <span className="control-label">Freq Range</span>
+        <div className="dual-range-wrap" aria-label="Frequency Zoom Range Slider">
+          <div className="dual-range-track" />
+          <div
+            className="dual-range-fill"
+            style={{
+              left: `${minPct}%`,
+              width: `${Math.max(0, maxPct - minPct)}%`,
+            }}
+          />
+          <input
+            type="range"
+            aria-label="Minimum Frequency Hz"
+            className="dual-range-input"
+            style={{ zIndex: minSliderVal > maxSliderHz - 1200 ? 4 : 2 }}
+            min={0}
+            max={maxSliderHz}
+            step={100}
+            value={minSliderVal}
+            onChange={(e) => handleMinSlide(Number(e.target.value))}
+          />
+          <input
+            type="range"
+            aria-label="Maximum Frequency Hz"
+            className="dual-range-input"
+            style={{ zIndex: 3 }}
+            min={0}
+            max={maxSliderHz}
+            step={100}
+            value={maxSliderVal}
+            onChange={(e) => handleMaxSlide(Number(e.target.value))}
+          />
         </div>
-        {isZoomed && (
-          <button
-            type="button"
-            className="btn btn-icon-only"
-            title="Reset Zoom"
-            aria-label="Reset Frequency Zoom"
-            onClick={() => onRangeChange(20, defaultMax)}
-          >
-            <RotateCcw size={13} />
-          </button>
-        )}
+        <span className="mono-val freq-range-readout">
+          {formatFrequency(minFreq)} – {formatFrequency(maxFreq)}
+        </span>
+        <button
+          type="button"
+          className="btn btn-icon-only"
+          disabled={!isZoomed}
+          style={{ opacity: isZoomed ? 1 : 0.35, cursor: isZoomed ? 'pointer' : 'default' }}
+          title="Reset Zoom"
+          aria-label="Reset Frequency Zoom"
+          onClick={() => onRangeChange(20, defaultMaxHz)}
+        >
+          <RotateCcw size={13} />
+        </button>
       </div>
     </>
   );

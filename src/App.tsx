@@ -18,6 +18,7 @@ import { usePreferences } from './hooks/usePreferences';
 import { AudioDeviceInfo, AudioEngine, AudioSourceKind } from './audio/AudioEngine';
 import { SpectrographBuffer } from './audio/SpectrographBuffer';
 import { dspBridge } from './wasm/dspBridge';
+import { timeConstantMsToAlpha } from './utils/music';
 import { SpectrumAnalyzerView } from './components/SpectrumAnalyzerView';
 import { SpectrographView } from './components/SpectrographView';
 import { MusicalTunerView } from './components/MusicalTunerView';
@@ -54,10 +55,11 @@ export const App: React.FC = () => {
   const [sourceKind, setSourceKind] = useState<AudioSourceKind>('none');
   const [sampleRate, setSampleRate] = useState<number>(48000);
   const [devices, setDevices] = useState<AudioDeviceInfo[]>([]);
-  const [wasmReady, setWasmReady] = useState<boolean>(false);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
+  const [spectrographPaused, setSpectrographPaused] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [frameTick, setFrameTick] = useState<number>(0);
+  const isRequestingMicRef = useRef<boolean>(false);
 
   const latestBinsRef = useRef<Float32Array>(
     new Float32Array(preferences.audio.fftSize / 2).fill(-110)
@@ -71,9 +73,7 @@ export const App: React.FC = () => {
 
   // Initialize WASM DSP kernel
   useEffect(() => {
-    void dspBridge.init('./wasm/spectral_dsp.wasm').then((ok) => {
-      setWasmReady(ok);
-    });
+    void dspBridge.init('./wasm/spectral_dsp.wasm');
     return () => {
       audioEngine.dispose();
     };
@@ -98,18 +98,28 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (sourceKind === 'none') return;
     let rafId = 0;
+    let lastNowMs = performance.now();
 
     const tick = (nowMs: number) => {
+      const dtMs = nowMs - lastNowMs;
+      lastNowMs = nowMs;
+
       const hasFreq = audioEngine.getFrequencyData(latestBinsRef.current);
       audioEngine.getTimeDomainData(latestTimeDomainRef.current);
 
       if (hasFreq) {
-        dspBridge.applyTimeSmoothing(
-          latestBinsRef.current,
-          spectroSmoothedRef.current,
-          preferences.spectrograph.timeSmoothing
-        );
-        spectrographBuffer.pushFrame(spectroSmoothedRef.current, nowMs);
+        if (!spectrographPaused) {
+          const alpha = timeConstantMsToAlpha(
+            preferences.spectrograph.timeSmoothingMs,
+            dtMs
+          );
+          dspBridge.applyTimeSmoothing(
+            latestBinsRef.current,
+            spectroSmoothedRef.current,
+            alpha
+          );
+          spectrographBuffer.pushFrame(spectroSmoothedRef.current, nowMs);
+        }
         setFrameTick((t) => (t + 1) & 0x7fffffff);
       }
       rafId = requestAnimationFrame(tick);
@@ -121,11 +131,13 @@ export const App: React.FC = () => {
     sourceKind,
     audioEngine,
     spectrographBuffer,
-    preferences.spectrograph.timeSmoothing,
+    spectrographPaused,
+    preferences.spectrograph.timeSmoothingMs,
   ]);
 
   const handleStartMic = useCallback(async () => {
     setErrorMsg(null);
+    isRequestingMicRef.current = true;
     try {
       await audioEngine.startMicrophone(preferences.audio.inputDeviceId);
       const sr = audioEngine.getSampleRate();
@@ -141,6 +153,8 @@ export const App: React.FC = () => {
           : 'Unable to access microphone. Try Demo Signal instead.'
       );
       setSourceKind('none');
+    } finally {
+      isRequestingMicRef.current = false;
     }
   }, [audioEngine, preferences.audio.inputDeviceId, preferences.audio.fftSize, spectrographBuffer]);
 
@@ -162,6 +176,33 @@ export const App: React.FC = () => {
     setSourceKind('none');
   }, [audioEngine]);
 
+  // Stop recording & audio playback whenever browser loses focus or is hidden
+  useEffect(() => {
+    const stopOnFocusLoss = () => {
+      if (isRequestingMicRef.current) return;
+      if (audioEngine.getSourceKind() !== 'none') {
+        audioEngine.stopSource();
+        setSourceKind('none');
+      }
+      audioEngine.stopReferenceTone();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        stopOnFocusLoss();
+      }
+    };
+
+    window.addEventListener('blur', stopOnFocusLoss);
+    window.addEventListener('pagehide', stopOnFocusLoss);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('blur', stopOnFocusLoss);
+      window.removeEventListener('pagehide', stopOnFocusLoss);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [audioEngine]);
+
   const setActiveTab = (tab: AppTab) => {
     updatePreferences((prev) => ({ ...prev, activeTab: tab }));
   };
@@ -170,18 +211,9 @@ export const App: React.FC = () => {
     <div className="app-shell">
       <header className="app-header">
         <div className="brand-group">
-          <img src="./icon.svg" alt="Spectral Logo" className="brand-icon" />
+          <img src="./logo/icon.svg" alt="Spectral Logo" className="brand-icon" />
           <div className="brand-text">
-            <span className="brand-title">SPECTRAL</span>
-            <span className="brand-badge">
-              <span
-                className="wasm-dot"
-                style={{
-                  background: wasmReady ? 'var(--accent-emerald)' : 'var(--accent-amber)',
-                }}
-              />
-              {wasmReady ? 'WASM DSP' : 'JS DSP'} • {(sampleRate / 1000).toFixed(1)}kHz
-            </span>
+            <span className="brand-title">Spectral</span>
           </div>
         </div>
 
@@ -214,7 +246,7 @@ export const App: React.FC = () => {
             onClick={() => setActiveTab('tuner')}
           >
             <Gauge size={15} />
-            <span>Musical Tuner</span>
+            <span>Tuner</span>
           </button>
         </nav>
 
@@ -394,7 +426,9 @@ export const App: React.FC = () => {
             fftSize={preferences.audio.fftSize}
             sampleRate={sampleRate}
             isAudioActive={sourceKind !== 'none'}
+            isPaused={spectrographPaused}
             frameTick={frameTick}
+            onTogglePause={() => setSpectrographPaused((p) => !p)}
             onUpdatePrefs={(patch) =>
               updatePreferences((prev) => ({
                 ...prev,

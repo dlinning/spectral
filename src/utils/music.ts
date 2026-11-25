@@ -109,3 +109,16 @@ export function clampFreqRange(
   }
   return [Math.round(lo), Math.round(hi)];
 }
+
+/**
+ * Converts a time-smoothing constant in milliseconds (tauMs) and frame interval (dtMs)
+ * into a 1-pole EMA smoothing coefficient alpha = exp(-dtMs / tauMs).
+ */
+export function timeConstantMsToAlpha(
+  tauMs: number,
+  dtMs = 1000 / 60
+): number {
+  if (!Number.isFinite(tauMs) || tauMs <= 0) return 0;
+  const safeDt = Math.max(1, Math.min(100, dtMs));
+  return Math.exp(-safeDt / tauMs);
+}

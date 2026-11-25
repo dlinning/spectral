@@ -4,11 +4,21 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
   base: './',
+  server:{
+    host:true,
+    allowedHosts:["e450-46-110-121-60.ngrok-free.app"]
+  },
   plugins: [
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icon.svg', 'wasm/spectral_dsp.wasm'],
+      includeAssets: [
+        'logo/icon.svg',
+        'logo/icon-128.png',
+        'logo/icon-256.png',
+        'logo/icon-512.png',
+        'wasm/spectral_dsp.wasm',
+      ],
       manifest: {
         name: 'Spectral — Acoustic Analyzer, Spectrograph & Tuner',
         short_name: 'Spectral',
@@ -20,15 +30,33 @@ export default defineConfig({
         orientation: 'any',
         icons: [
           {
-            src: 'icon.svg',
+            src: 'logo/icon.svg',
             sizes: 'any',
             type: 'image/svg+xml',
+            purpose: 'any maskable',
+          },
+          {
+            src: 'logo/icon-128.png',
+            sizes: '128x128',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: 'logo/icon-256.png',
+            sizes: '256x256',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: 'logo/icon-512.png',
+            sizes: '512x512',
+            type: 'image/png',
             purpose: 'any maskable',
           },
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,wasm}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,wasm}'],
       },
     }),
   ],

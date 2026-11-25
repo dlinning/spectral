@@ -42,37 +42,72 @@ export const MusicalTunerView: React.FC<MusicalTunerViewProps> = ({
   const strobePhaseRef = useRef<number>(0);
   const lastFrameTimeRef = useRef<number>(performance.now());
   const holdTimerRef = useRef<number>(0);
+  const lastDetectMsRef = useRef<number>(0);
+  const smoothedFreqRef = useRef<number>(-1);
 
-  // Stop reference tone if unmounting
+  // Stop reference tone if unmounting or browser loses focus
   useEffect(() => {
+    const stopTone = () => {
+      audioEngine.stopReferenceTone();
+      setTonePlaying(false);
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') stopTone();
+    };
+    window.addEventListener('blur', stopTone);
+    window.addEventListener('pagehide', stopTone);
+    document.addEventListener('visibilitychange', handleVisibility);
     return () => {
+      window.removeEventListener('blur', stopTone);
+      window.removeEventListener('pagehide', stopTone);
+      document.removeEventListener('visibilitychange', handleVisibility);
       audioEngine.stopReferenceTone();
     };
   }, [audioEngine]);
 
-  // Run MPM pitch detection whenever audio frames arrive
+  // Run MPM pitch detection throttled (~110 ms) with frequency & cents smoothing to prevent flickering
   useEffect(() => {
     if (!isAudioActive) {
+      smoothedFreqRef.current = -1;
       setDetectedFreq(-1);
       setClarity(0);
       return;
     }
+
+    const now = performance.now();
+    if (now - lastDetectMsRef.current < 110) {
+      return;
+    }
+    lastDetectMsRef.current = now;
+
     const td = latestTimeDomainRef.current;
     if (td.length < 256) return;
 
     const result = dspBridge.detectPitchMPM(td, sampleRate, prefs.clarityThreshold);
-    const now = performance.now();
 
     if (result.frequency > 25 && result.frequency < 4500) {
       holdTimerRef.current = now;
-      setDetectedFreq(result.frequency);
+
+      // Smooth frequency if tracking the same note (within ~1 semitone), snap on note change
+      const prevFreq = smoothedFreqRef.current;
+      const sameNote =
+        prevFreq > 0 && Math.abs(Math.log2(result.frequency / prevFreq)) < 0.05;
+      const nextFreq = sameNote
+        ? prevFreq * 0.7 + result.frequency * 0.3
+        : result.frequency;
+
+      smoothedFreqRef.current = nextFreq;
+      setDetectedFreq(nextFreq);
       setClarity(result.clarity);
 
-      const note = frequencyToNoteInfo(result.frequency, prefs.referenceA4);
+      const note = frequencyToNoteInfo(nextFreq, prefs.referenceA4);
       if (note) {
-        setSmoothedCents((prev) => prev * 0.65 + note.cents * 0.35);
+        setSmoothedCents((prev) =>
+          sameNote ? prev * 0.65 + note.cents * 0.35 : note.cents
+        );
       }
-    } else if (now - holdTimerRef.current > 700) {
+    } else if (now - holdTimerRef.current > 1000) {
+      smoothedFreqRef.current = -1;
       setDetectedFreq(-1);
       setClarity(result.clarity);
     }
@@ -185,20 +220,17 @@ export const MusicalTunerView: React.FC<MusicalTunerViewProps> = ({
   const clampedCents = Math.max(-50, Math.min(50, smoothedCents));
   const statusClass = !noteInfo
     ? 'idle'
-    : Math.abs(noteInfo.cents) <= 3
+    : Math.abs(smoothedCents) <= 3
     ? 'in-tune'
-    : noteInfo.cents > 0
+    : smoothedCents > 0
     ? 'sharp'
     : 'flat';
 
-  // Needle SVG geometry (-50 to +50 deg)
+  // Needle SVG geometry (-52 to +52 deg)
   const angleDeg = (clampedCents / 50) * 52;
-  const angleRad = ((angleDeg - 90) * Math.PI) / 180;
   const cx = 180;
   const cy = 155;
   const radius = 122;
-  const tipX = cx + Math.cos(angleRad) * radius;
-  const tipY = cy + Math.sin(angleRad) * radius;
 
   const selectedOctave = targetToneLabel.octave;
   const selectedNoteIdx = ((prefs.toneGenNoteIndex % 12) + 12) % 12;
@@ -245,11 +277,11 @@ export const MusicalTunerView: React.FC<MusicalTunerViewProps> = ({
           </div>
 
           <div className="tuner-metrics-row">
-            <span>{noteInfo ? `${detectedFreq.toFixed(2)} Hz` : 'Listening...'}</span>
+            <span>{noteInfo ? `${detectedFreq.toFixed(1)} Hz` : 'Listening...'}</span>
             <span>•</span>
             <span>
               {noteInfo
-                ? `${noteInfo.cents >= 0 ? '+' : ''}${noteInfo.cents.toFixed(1)} ¢`
+                ? `${smoothedCents >= 0 ? '+' : ''}${smoothedCents.toFixed(1)} ¢`
                 : '0.0 ¢'}
             </span>
           </div>
@@ -327,8 +359,13 @@ export const MusicalTunerView: React.FC<MusicalTunerViewProps> = ({
               <line
                 x1={cx}
                 y1={cy}
-                x2={noteInfo ? tipX : cx}
-                y2={noteInfo ? tipY : cy - radius}
+                x2={cx}
+                y2={cy - radius}
+                style={{
+                  transform: `rotate(${noteInfo ? angleDeg : 0}deg)`,
+                  transformOrigin: `${cx}px ${cy}px`,
+                  transition: 'transform 110ms ease-out',
+                }}
                 stroke={
                   !noteInfo
                     ? '#475569'

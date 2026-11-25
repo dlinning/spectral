@@ -51,7 +51,7 @@ export class AudioEngine {
       this.analyser.fftSize = this.fftSize;
       // Disable Web Audio's built-in smoothing so our WASM DSP engine owns time smoothing cleanly
       this.analyser.smoothingTimeConstant = 0;
-      this.analyser.minDecibels = -110;
+      this.analyser.minDecibels = -120;
       this.analyser.maxDecibels = 0;
 
       // Connect analyser to a silent sink at destination so browsers actively pull graph frames
@@ -267,6 +267,9 @@ export class AudioEngine {
     }
 
     this.sourceKind = 'none';
+    if (!this.toneOsc && this.ctx && this.ctx.state === 'running') {
+      void this.ctx.suspend();
+    }
   }
 
   public async startReferenceTone(
@@ -329,6 +332,9 @@ export class AudioEngine {
         // Ignore
       }
       this.toneGain = null;
+    }
+    if (this.sourceKind === 'none' && this.ctx && this.ctx.state === 'running') {
+      void this.ctx.suspend();
     }
   }
 

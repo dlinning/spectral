@@ -147,7 +147,8 @@ export class SpectrographBuffer {
     const indices: number[] = [];
 
     for (let i = 0; i < this.count; i++) {
-      if (this.getTimestampAt(i) >= cutoffMs) {
+      const ts = this.getTimestampAt(i);
+      if (ts >= cutoffMs && ts <= endMs) {
         indices.push(i);
       }
     }

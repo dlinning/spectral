@@ -1,23 +1,34 @@
+import {
+  Download,
+  Mic,
+  Pause,
+  Play,
+  Radio,
+  RotateCcw,
+  SlidersHorizontal,
+} from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Download, RotateCcw, SlidersHorizontal, Mic, Radio } from 'lucide-react';
 import {
   OctaveSmoothing,
   SpectrumAnalyzerPreferences,
+  TiltSlope,
 } from '../types/preferences';
-import { dspBridge } from '../wasm/dspBridge';
-import {
-  clampFreqRange,
-  formatFrequency,
-  freqToNorm,
-  frequencyToNoteInfo,
-  normToFreq,
-} from '../utils/music';
 import {
   exportCanvasToPNG,
   formatSpectrumCSV,
   formatSpectrumJSON,
   triggerFileDownload,
 } from '../utils/exporters';
+import {
+  clampFreqRange,
+  formatFrequency,
+  freqToNorm,
+  frequencyToNoteInfo,
+  normToFreq,
+  timeConstantMsToAlpha,
+} from '../utils/music';
+import { dspBridge } from '../wasm/dspBridge';
+import { DbRangeControls } from './DbRangeControls';
 import { FrequencyZoomControls } from './FrequencyZoomControls';
 
 interface SpectrumAnalyzerViewProps {
@@ -41,8 +52,11 @@ const OCTAVE_OPTIONS: { value: OctaveSmoothing; label: string }[] = [
   { value: 2, label: '1/2' },
 ];
 
-const DB_MIN = -110;
-const DB_MAX = 0;
+const TILT_OPTIONS: { value: TiltSlope; label: string }[] = [
+  { value: 0, label: 'Flat' },
+  { value: 3, label: '+3dB' },
+  { value: 4.5, label: '+4.5dB' },
+];
 
 export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
   prefs,
@@ -59,11 +73,13 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ width: 800, height: 420 });
   const [controlsOpen, setControlsOpen] = useState(true);
+  const [isPaused, setIsPaused] = useState(false);
 
   // DSP buffers
   const timeSmoothedRef = useRef<Float32Array>(new Float32Array(fftSize / 2).fill(-110));
   const octaveSmoothedRef = useRef<Float32Array>(new Float32Array(fftSize / 2).fill(-110));
   const peakHoldRef = useRef<Float32Array>(new Float32Array(fftSize / 2).fill(-110));
+  const lastFrameMsRef = useRef<number>(performance.now());
 
   // Cursor / touch zoom & pan state
   const cursorRef = useRef<{ x: number; y: number } | null>(null);
@@ -142,14 +158,21 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
 
     const raw = latestBinsRef.current;
     const numBins = Math.min(raw.length, timeSmoothedRef.current.length);
+    const nowMs = performance.now();
+    const dtMs = nowMs - lastFrameMsRef.current;
+    lastFrameMsRef.current = nowMs;
+
     if (isAudioActive && numBins > 0) {
-      dspBridge.applyTimeSmoothing(raw, timeSmoothedRef.current, prefs.timeSmoothing);
+      if (!isPaused) {
+        const alpha = timeConstantMsToAlpha(prefs.timeSmoothingMs, dtMs);
+        dspBridge.applyTimeSmoothing(raw, timeSmoothedRef.current, alpha);
+      }
       dspBridge.applyOctaveSmoothing(
         timeSmoothedRef.current,
         octaveSmoothedRef.current,
         prefs.octaveSmoothing
       );
-      if (prefs.showPeakHold) {
+      if (prefs.showPeakHold && !isPaused) {
         dspBridge.updatePeakHold(
           octaveSmoothedRef.current,
           peakHoldRef.current,
@@ -184,8 +207,14 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
 
-    for (let db = -100; db <= 0; db += 20) {
-      const y = padTop + ((DB_MAX - db) / (DB_MAX - DB_MIN)) * plotH;
+    const dbMin = prefs.minDb;
+    const dbMax = prefs.maxDb;
+    const dbSpan = Math.max(10, dbMax - dbMin);
+    const dbStep = dbSpan <= 40 ? 10 : 20;
+    const firstGridDb = Math.ceil(dbMin / dbStep) * dbStep;
+
+    for (let db = firstGridDb; db <= dbMax; db += dbStep) {
+      const y = padTop + ((dbMax - db) / dbSpan) * plotH;
       ctx.strokeStyle = 'rgba(148, 163, 184, 0.12)';
       ctx.beginPath();
       ctx.moveTo(padLeft, y);
@@ -231,23 +260,56 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
     const displayData = octaveSmoothedRef.current;
 
     const mapDbToY = (db: number) => {
-      const clamped = Math.max(DB_MIN, Math.min(DB_MAX, db));
-      return padTop + ((DB_MAX - clamped) / (DB_MAX - DB_MIN)) * plotH;
+      const clamped = Math.max(dbMin, Math.min(dbMax, db));
+      return padTop + ((dbMax - clamped) / dbSpan) * plotH;
+    };
+
+    const tiltOffset = (freqHz: number) =>
+      prefs.tiltSlope ? prefs.tiltSlope * Math.log2(Math.max(20, freqHz) / 1000) : 0;
+
+    // Sample pixel column using max-pooling when multiple FFT bins fall within 1 pixel
+    // (critical above ~1 kHz on log axes so narrow peaks are never skipped)
+    const sampleColumnDb = (arr: Float32Array, px: number): number => {
+      const fCenter = normToFreq(px / plotW, prefs.minFreq, prefs.maxFreq, prefs.freqScale);
+      const f0 = normToFreq(
+        Math.max(0, px - 0.5) / plotW,
+        prefs.minFreq,
+        prefs.maxFreq,
+        prefs.freqScale
+      );
+      const f1 = normToFreq(
+        Math.min(plotW, px + 0.5) / plotW,
+        prefs.minFreq,
+        prefs.maxFreq,
+        prefs.freqScale
+      );
+      const bStart = Math.max(1, Math.min(numBins - 1, Math.floor(f0 / binWidth)));
+      const bEnd = Math.max(1, Math.min(numBins - 1, Math.floor(f1 / binWidth)));
+
+      let rawDb: number;
+      if (bEnd > bStart) {
+        rawDb = -160;
+        for (let b = bStart; b <= bEnd; b++) {
+          if (arr[b] > rawDb) rawDb = arr[b];
+        }
+      } else {
+        const bf = fCenter / binWidth;
+        const b0 = Math.max(1, Math.min(numBins - 1, Math.floor(bf)));
+        const b1 = Math.max(1, Math.min(numBins - 1, Math.ceil(bf)));
+        const frac = bf - b0;
+        rawDb = arr[b0] * (1 - frac) + arr[b1] * frac;
+      }
+      return rawDb + tiltOffset(fCenter);
     };
 
     // Draw Peak Hold curve
-    if (prefs.showPeakHold && isAudioActive) {
+    if (prefs.showPeakHold && isAudioActive && numBins > 1) {
       ctx.beginPath();
-      let started = false;
-      for (let i = 1; i < numBins; i++) {
-        const f = i * binWidth;
-        if (f < prefs.minFreq * 0.8) continue;
-        if (f > prefs.maxFreq * 1.2) break;
-        const x = padLeft + freqToNorm(f, prefs.minFreq, prefs.maxFreq, prefs.freqScale) * plotW;
-        const y = mapDbToY(peakHoldRef.current[i]);
-        if (!started) {
+      for (let px = 0; px <= plotW; px += 1) {
+        const x = padLeft + px;
+        const y = mapDbToY(sampleColumnDb(peakHoldRef.current, px));
+        if (px === 0) {
           ctx.moveTo(x, y);
-          started = true;
         } else {
           ctx.lineTo(x, y);
         }
@@ -262,30 +324,20 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
       ctx.beginPath();
       let firstX = padLeft;
       let lastX = padLeft;
-      let started = false;
 
-      // Pixel-stepped sampling for crisp rendering across log & linear zoomed regions
-      for (let px = 0; px <= plotW; px += 1.5) {
-        const freq = normToFreq(px / plotW, prefs.minFreq, prefs.maxFreq, prefs.freqScale);
-        const binFloat = freq / binWidth;
-        const b0 = Math.max(1, Math.min(numBins - 1, Math.floor(binFloat)));
-        const b1 = Math.max(1, Math.min(numBins - 1, Math.ceil(binFloat)));
-        const frac = binFloat - b0;
-        const db = displayData[b0] * (1 - frac) + displayData[b1] * frac;
+      for (let px = 0; px <= plotW; px += 1) {
         const x = padLeft + px;
-        const y = mapDbToY(db);
-
-        if (!started) {
+        const y = mapDbToY(sampleColumnDb(displayData, px));
+        if (px === 0) {
           firstX = x;
           ctx.moveTo(x, y);
-          started = true;
         } else {
           ctx.lineTo(x, y);
         }
         lastX = x;
       }
 
-      if (prefs.fillArea && started) {
+      if (prefs.fillArea) {
         ctx.save();
         ctx.lineTo(lastX, padTop + plotH);
         ctx.lineTo(firstX, padTop + plotH);
@@ -333,7 +385,7 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
     ctx.strokeRect(padLeft, padTop, plotW, plotH);
 
     ctx.restore();
-  }, [frameTick, isAudioActive, prefs, sampleRate, fftSize, size, latestBinsRef]);
+  }, [frameTick, isAudioActive, isPaused, prefs, sampleRate, fftSize, size, latestBinsRef]);
 
   const updateCursorFromClient = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
@@ -358,7 +410,7 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
     const normX = (x - padLeft) / plotW;
     const normY = (y - padTop) / plotH;
     const freq = normToFreq(normX, prefs.minFreq, prefs.maxFreq, prefs.freqScale);
-    const db = DB_MAX - normY * (DB_MAX - DB_MIN);
+    const db = prefs.maxDb - normY * Math.max(10, prefs.maxDb - prefs.minDb);
     const noteInfo = frequencyToNoteInfo(freq);
     const noteStr = noteInfo
       ? `${noteInfo.label} ${noteInfo.cents >= 0 ? '+' : ''}${noteInfo.cents.toFixed(0)}¢`
@@ -596,6 +648,17 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
         />
 
         <div className="canvas-hud-top-left">
+          {isPaused && (
+            <div
+              className="hud-pill"
+              style={{
+                color: '#fda4af',
+                borderColor: 'rgba(244, 63, 94, 0.5)',
+              }}
+            >
+              <strong>PAUSED</strong>
+            </div>
+          )}
           <div className="hud-pill">
             <span>Range</span>
             <strong>
@@ -640,18 +703,33 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
           className="mobile-summary-text"
           style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}
         >
-          {octLabel} • Smooth {Math.round(prefs.timeSmoothing * 100)}% • {prefs.freqScale.toUpperCase()}
+          {octLabel} • {prefs.timeSmoothingMs}ms • {prefs.freqScale.toUpperCase()}
         </span>
-        <button
-          type="button"
-          className="btn"
-          aria-expanded={controlsOpen}
-          aria-label="Toggle Analyzer Controls"
-          onClick={() => setControlsOpen((v) => !v)}
-        >
-          <SlidersHorizontal size={14} />
-          <span className="desktop-only-label">Controls</span>
-        </button>
+        <div className="mobile-bar-actions">
+          <button
+            type="button"
+            className={`btn btn-icon-only-landscape ${isPaused ? 'btn-active-mic' : ''}`}
+            disabled={!isAudioActive}
+            aria-label={isPaused ? 'Resume Spectrum Analyzer' : 'Pause Spectrum Analyzer'}
+            title={isPaused ? 'Resume' : 'Pause'}
+            onClick={() => setIsPaused((p) => !p)}
+          >
+            {isPaused ? <Play size={14} /> : <Pause size={14} />}
+            <span className="mobile-portrait-label">
+              {isPaused ? 'Resume' : 'Pause'}
+            </span>
+          </button>
+          <button
+            type="button"
+            className="btn btn-icon-only"
+            aria-expanded={controlsOpen}
+            aria-label="Toggle Analyzer Controls"
+            title="Toggle Analyzer Controls"
+            onClick={() => setControlsOpen((v) => !v)}
+          >
+            <SlidersHorizontal size={14} />
+          </button>
+        </div>
       </div>
 
       <div className={`controls-dock ${controlsOpen ? '' : 'collapsed'}`}>
@@ -672,18 +750,34 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
         </div>
 
         <div className="control-group">
+          <span className="control-label">Slope</span>
+          <div className="segmented" role="group" aria-label="Spectral Tilt">
+            {TILT_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                className={`seg-btn ${(prefs.tiltSlope ?? 0) === opt.value ? 'active' : ''}`}
+                onClick={() => onUpdatePrefs({ tiltSlope: opt.value })}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="control-group">
           <span className="control-label">Time Smooth</span>
           <input
             type="range"
             aria-label="Spectrum Time Smoothing"
             className="range-slider"
             min={0}
-            max={0.96}
-            step={0.02}
-            value={prefs.timeSmoothing}
-            onChange={(e) => onUpdatePrefs({ timeSmoothing: Number(e.target.value) })}
+            max={300}
+            step={10}
+            value={prefs.timeSmoothingMs}
+            onChange={(e) => onUpdatePrefs({ timeSmoothingMs: Number(e.target.value) })}
           />
-          <span className="mono-val">{Math.round(prefs.timeSmoothing * 100)}%</span>
+          <span className="mono-val">{prefs.timeSmoothingMs} ms</span>
         </div>
 
         <FrequencyZoomControls
@@ -695,7 +789,22 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
           onScaleChange={(freqScale) => onUpdatePrefs({ freqScale })}
         />
 
+        <DbRangeControls
+          minDb={prefs.minDb}
+          maxDb={prefs.maxDb}
+          onChange={(minDb, maxDb) => onUpdatePrefs({ minDb, maxDb })}
+        />
+
         <div className="control-group">
+          <button
+            type="button"
+            className={`btn desktop-only-btn ${isPaused ? 'btn-active-mic' : ''}`}
+            disabled={!isAudioActive}
+            onClick={() => setIsPaused((p) => !p)}
+          >
+            {isPaused ? <Play size={13} /> : <Pause size={13} />}
+            <span>{isPaused ? 'Resume' : 'Pause'}</span>
+          </button>
           <button
             type="button"
             className={`btn ${prefs.showPeakHold ? 'btn-active-demo' : ''}`}

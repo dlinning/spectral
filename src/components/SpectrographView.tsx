@@ -1,5 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Download, Mic, Radio, SlidersHorizontal, Trash2 } from 'lucide-react';
+import {
+  Download,
+  Mic,
+  Pause,
+  Play,
+  Radio,
+  RotateCcw,
+  SlidersHorizontal,
+  Trash2,
+} from 'lucide-react';
 import {
   ColormapId,
   HistoryDurationSec,
@@ -20,6 +29,7 @@ import {
   formatSpectrographJSON,
   triggerFileDownload,
 } from '../utils/exporters';
+import { DbRangeControls } from './DbRangeControls';
 import { FrequencyZoomControls } from './FrequencyZoomControls';
 
 interface SpectrographViewProps {
@@ -28,7 +38,9 @@ interface SpectrographViewProps {
   fftSize: number;
   sampleRate: number;
   isAudioActive: boolean;
+  isPaused: boolean;
   frameTick: number;
+  onTogglePause: () => void;
   onUpdatePrefs: (patch: Partial<SpectrographPreferences>) => void;
   onClearBuffer: () => void;
   onStartMic: () => void;
@@ -43,7 +55,9 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
   fftSize,
   sampleRate,
   isAudioActive,
+  isPaused,
   frameTick,
+  onTogglePause,
   onUpdatePrefs,
   onClearBuffer,
   onStartMic,
@@ -56,6 +70,7 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
 
   const [size, setSize] = useState({ width: 800, height: 420 });
   const [controlsOpen, setControlsOpen] = useState(true);
+  const [scrollBackSec, setScrollBackSec] = useState(0);
   const [hoverInfo, setHoverInfo] = useState<{
     freq: number;
     note: string;
@@ -66,6 +81,8 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
   const dragRef = useRef<{
     active: boolean;
     startX: number;
+    startY: number;
+    startScrollBack: number;
     startMin: number;
     startMax: number;
   } | null>(null);
@@ -100,8 +117,24 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
     return () => ro.disconnect();
   }, []);
 
-  // Re-render spectrograph waterfall from raw 60s ring buffer so zoom, scale,
-  // colormap, dynamic range, and history duration always reflect full resolution.
+  const frameCount = buffer.getFrameCount();
+  const earliestMs = frameCount > 0 ? buffer.getTimestampAt(0) : 0;
+  const latestMs = frameCount > 0 ? buffer.getLatestTimestamp() : 0;
+  const capturedSeconds =
+    frameCount > 1 ? Math.min(60, (latestMs - earliestMs) / 1000) : 0;
+  const maxScrollBackSec = Math.max(0, capturedSeconds - 0.5);
+  const effectiveScrollBack = Math.min(scrollBackSec, maxScrollBackSec);
+
+  // Reset scrollBackSec when buffer is cleared
+  useEffect(() => {
+    if (frameCount === 0 && scrollBackSec !== 0) {
+      setScrollBackSec(0);
+    }
+  }, [frameCount, scrollBackSec]);
+
+  // Right-to-left spectrograph rendering:
+  // X-axis = Time (newest on right, scrolling right-to-left)
+  // Y-axis = Frequency (minFreq at bottom, maxFreq at top)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -119,10 +152,10 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
 
     const w = size.width;
     const h = size.height;
-    const padLeft = 48;
+    const padLeft = 52; // Room for Frequency Y-axis labels
     const padRight = 52; // Room for dB colorbar legend
     const padTop = 16;
-    const padBottom = 28;
+    const padBottom = 28; // Room for Time X-axis labels
     const plotW = Math.max(10, Math.floor(w - padLeft - padRight));
     const plotH = Math.max(10, Math.floor(h - padTop - padBottom));
 
@@ -139,14 +172,23 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
     const numBins = buffer.getNumBins();
     const binWidth = sampleRate / fftSize;
 
-    // Precompute horizontal pixel -> FFT bin index lookup for current zoom + scale
-    const binLookup = new Float32Array(plotW);
-    for (let px = 0; px < plotW; px++) {
-      const f = normToFreq(px / Math.max(1, plotW - 1), prefs.minFreq, prefs.maxFreq, prefs.freqScale);
-      binLookup[px] = Math.max(1, Math.min(numBins - 1, f / binWidth));
+    // Vertical pixel -> FFT bin range lookup (py=0 is maxFreq at top, py=plotH-1 is minFreq at bottom)
+    // Uses max-pooling across bins when multiple FFT bins map to one vertical pixel row
+    const binLo = new Int32Array(plotH);
+    const binHi = new Int32Array(plotH);
+    const binExact = new Float32Array(plotH);
+    for (let py = 0; py < plotH; py++) {
+      const nTop = 1 - Math.max(0, py - 0.5) / Math.max(1, plotH - 1);
+      const nBot = 1 - Math.min(plotH - 1, py + 0.5) / Math.max(1, plotH - 1);
+      const nMid = 1 - py / Math.max(1, plotH - 1);
+      const fBot = normToFreq(nBot, prefs.minFreq, prefs.maxFreq, prefs.freqScale);
+      const fTop = normToFreq(nTop, prefs.minFreq, prefs.maxFreq, prefs.freqScale);
+      const fMid = normToFreq(nMid, prefs.minFreq, prefs.maxFreq, prefs.freqScale);
+      binLo[py] = Math.max(1, Math.min(numBins - 1, Math.floor(fBot / binWidth)));
+      binHi[py] = Math.max(binLo[py], Math.min(numBins - 1, Math.floor(fTop / binWidth)));
+      binExact[py] = Math.max(1, Math.min(numBins - 1, fMid / binWidth));
     }
 
-    // Prepare offscreen ImageData
     if (!offscreenRef.current) {
       offscreenRef.current = document.createElement('canvas');
     }
@@ -172,21 +214,20 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
         pixels[i + 3] = 255;
       }
 
-      const frameCount = buffer.getFrameCount();
       if (frameCount > 0) {
-        const latestMs = buffer.getLatestTimestamp();
         const durationMs = prefs.historyDurationSec * 1000;
+        const viewEndMs = latestMs - effectiveScrollBack * 1000;
+        const viewStartMs = viewEndMs - durationMs;
         const dbSpan = Math.max(10, prefs.maxDb - prefs.minDb);
         const invDbSpan = 255 / dbSpan;
 
-        // Collect frames within window & map each row y (0 = newest top, plotH-1 = oldest bottom)
-        // Build index lookup by walking backward from newest frame
-        const rowFrameIdx = new Int32Array(plotH).fill(-1);
+        // Map horizontal pixel column px (0 = oldest left, plotW-1 = newest right) -> frame index
+        const colFrameIdx = new Int32Array(plotW).fill(-1);
         let frameCursor = frameCount - 1;
 
-        for (let py = 0; py < plotH; py++) {
-          const targetAgeMs = (py / Math.max(1, plotH - 1)) * durationMs;
-          const targetTs = latestMs - targetAgeMs;
+        for (let px = plotW - 1; px >= 0; px--) {
+          const targetTs =
+            viewStartMs + (px / Math.max(1, plotW - 1)) * durationMs;
 
           while (
             frameCursor > 0 &&
@@ -196,24 +237,39 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
           }
 
           const ts = buffer.getTimestampAt(frameCursor);
-          if (latestMs - ts <= durationMs + 250) {
-            rowFrameIdx[py] = frameCursor;
+          if (targetTs >= earliestMs - 250 && Math.abs(targetTs - ts) <= 500) {
+            colFrameIdx[px] = frameCursor;
           }
         }
 
-        for (let py = 0; py < plotH; py++) {
-          const fIdx = rowFrameIdx[py];
-          if (fIdx < 0) continue;
-          const frame = buffer.getFrameView(fIdx);
-          if (!frame) continue;
+        // Cache frame views for each column to avoid repeated lookups inside py loop
+        const colFrames: (Float32Array | null)[] = new Array(plotW);
+        for (let px = 0; px < plotW; px++) {
+          const fIdx = colFrameIdx[px];
+          colFrames[px] = fIdx >= 0 ? buffer.getFrameView(fIdx) : null;
+        }
 
+        for (let py = 0; py < plotH; py++) {
+          const lo = binLo[py];
+          const hi = binHi[py];
+          const bf = binExact[py];
+          const b0 = bf | 0;
+          const b1 = b0 + 1 < numBins ? b0 + 1 : b0;
+          const frac = bf - b0;
           const rowBase = py * plotW * 4;
+
           for (let px = 0; px < plotW; px++) {
-            const bf = binLookup[px];
-            const b0 = bf | 0;
-            const b1 = b0 + 1 < numBins ? b0 + 1 : b0;
-            const frac = bf - b0;
-            const db = frame[b0] * (1 - frac) + frame[b1] * frac;
+            const frame = colFrames[px];
+            if (!frame) continue;
+            let db: number;
+            if (hi > lo) {
+              db = -160;
+              for (let b = lo; b <= hi; b++) {
+                if (frame[b] > db) db = frame[b];
+              }
+            } else {
+              db = frame[b0] * (1 - frac) + frame[b1] * frac;
+            }
             const colorIdx = Math.max(
               0,
               Math.min(255, Math.round((db - prefs.minDb) * invDbSpan))
@@ -232,15 +288,21 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
       ctx.drawImage(offscreen, padLeft, padTop);
     }
 
-    // Time Axis Ticks (Left)
+    // Frequency Axis Ticks (Left Y-axis: minFreq bottom -> maxFreq top)
+    const freqTicks =
+      prefs.freqScale === 'log'
+        ? [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
+        : Array.from({ length: 7 }, (_, idx) =>
+            prefs.minFreq + ((idx + 1) / 8) * (prefs.maxFreq - prefs.minFreq)
+          );
+
     ctx.font = '11px JetBrains Mono, monospace';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
-    const timeSteps = 5;
-    for (let i = 0; i <= timeSteps; i++) {
-      const ratio = i / timeSteps;
-      const y = padTop + ratio * plotH;
-      const sec = -(ratio * prefs.historyDurationSec);
+    for (const f of freqTicks) {
+      if (f < prefs.minFreq || f > prefs.maxFreq) continue;
+      const norm = freqToNorm(f, prefs.minFreq, prefs.maxFreq, prefs.freqScale);
+      const y = padTop + (1 - norm) * plotH;
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
       ctx.beginPath();
       ctx.moveTo(padLeft, y);
@@ -248,23 +310,22 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
       ctx.stroke();
 
       ctx.fillStyle = '#94a3b8';
-      ctx.fillText(sec === 0 ? '0s' : `${Math.round(sec)}s`, padLeft - 6, y);
+      const label =
+        f >= 1000
+          ? `${(f / 1000).toFixed(f % 1000 === 0 ? 0 : 1)}k`
+          : `${Math.round(f)}`;
+      ctx.fillText(label, padLeft - 6, y);
     }
 
-    // Frequency Axis Ticks (Bottom)
-    const freqTicks =
-      prefs.freqScale === 'log'
-        ? [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
-        : Array.from({ length: 8 }, (_, idx) =>
-            prefs.minFreq + ((idx + 1) / 9) * (prefs.maxFreq - prefs.minFreq)
-          );
-
+    // Time Axis Ticks (Bottom X-axis: oldest on left -> newest on right)
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    for (const f of freqTicks) {
-      if (f < prefs.minFreq || f > prefs.maxFreq) continue;
-      const norm = freqToNorm(f, prefs.minFreq, prefs.maxFreq, prefs.freqScale);
-      const x = padLeft + norm * plotW;
+    const timeSteps = 5;
+    for (let i = 0; i <= timeSteps; i++) {
+      const ratio = i / timeSteps;
+      const x = padLeft + ratio * plotW;
+      const offsetSec = -(effectiveScrollBack + (1 - ratio) * prefs.historyDurationSec);
+
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
       ctx.beginPath();
       ctx.moveTo(x, padTop);
@@ -272,8 +333,11 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
       ctx.stroke();
 
       ctx.fillStyle = '#94a3b8';
-      const label = f >= 1000 ? `${(f / 1000).toFixed(f % 1000 === 0 ? 0 : 1)}k` : `${Math.round(f)}`;
-      ctx.fillText(label, x, padTop + plotH + 6);
+      ctx.fillText(
+        Math.abs(offsetSec) < 0.05 ? '0s' : `${offsetSec.toFixed(1).replace(/\.0$/, '')}s`,
+        x,
+        padTop + plotH + 6
+      );
     }
 
     // Colorbar Legend (Right)
@@ -299,13 +363,24 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
     ctx.strokeRect(padLeft, padTop, plotW, plotH);
 
     ctx.restore();
-  }, [frameTick, prefs, buffer, sampleRate, fftSize, size]);
+  }, [
+    frameTick,
+    prefs,
+    buffer,
+    sampleRate,
+    fftSize,
+    size,
+    effectiveScrollBack,
+    frameCount,
+    earliestMs,
+    latestMs,
+  ]);
 
   const inspectAtClient = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const padLeft = 48;
+    const padLeft = 52;
     const padRight = 52;
     const padTop = 16;
     const padBottom = 28;
@@ -320,20 +395,20 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
     }
 
     const normX = (x - padLeft) / plotW;
-    const normY = (y - padTop) / plotH;
-    const freq = normToFreq(normX, prefs.minFreq, prefs.maxFreq, prefs.freqScale);
-    const timeOffsetSec = -(normY * prefs.historyDurationSec);
+    const normY = 1 - (y - padTop) / plotH;
+    const freq = normToFreq(normY, prefs.minFreq, prefs.maxFreq, prefs.freqScale);
+    const timeOffsetSec = -(
+      effectiveScrollBack +
+      (1 - normX) * prefs.historyDurationSec
+    );
     const noteInfo = frequencyToNoteInfo(freq);
     const note = noteInfo ? noteInfo.label : '—';
 
-    // Look up actual magnitude in the buffer if available
     let db: number | null = null;
-    const count = buffer.getFrameCount();
-    if (count > 0) {
-      const latestMs = buffer.getLatestTimestamp();
+    if (frameCount > 0) {
       const targetTs = latestMs + timeOffsetSec * 1000;
       let chosen = -1;
-      for (let i = count - 1; i >= 0; i--) {
+      for (let i = frameCount - 1; i >= 0; i--) {
         if (buffer.getTimestampAt(i) <= targetTs) {
           chosen = i;
           break;
@@ -354,32 +429,40 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
     setHoverInfo({ freq, note, timeOffsetSec, db });
   };
 
+  // Mouse Wheel zooms Frequency axis (Y) centered at cursor Y
   const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
     e.preventDefault();
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const padLeft = 48;
-    const plotW = Math.max(10, rect.width - padLeft - 52);
-    const norm = Math.max(0, Math.min(1, (e.clientX - rect.left - padLeft) / plotW));
+    const padTop = 16;
+    const plotH = Math.max(10, rect.height - padTop - 28);
+    const normY = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top - padTop) / plotH));
     const zoomFactor = e.deltaY > 0 ? 1.15 : 0.87;
 
     if (prefs.freqScale === 'log') {
       const logMin = Math.log10(Math.max(20, prefs.minFreq));
       const logMax = Math.log10(Math.max(21, prefs.maxFreq));
-      const logCenter = logMin + norm * (logMax - logMin);
-      const nextSpan = Math.max(0.08, Math.min(Math.log10(nyquist / 20), (logMax - logMin) * zoomFactor));
+      const logCenter = logMin + normY * (logMax - logMin);
+      const nextSpan = Math.max(
+        0.08,
+        Math.min(Math.log10(nyquist / 20), (logMax - logMin) * zoomFactor)
+      );
       const [lo, hi] = clampFreqRange(
-        Math.pow(10, logCenter - norm * nextSpan),
-        Math.pow(10, logCenter + (1 - norm) * nextSpan),
+        Math.pow(10, logCenter - normY * nextSpan),
+        Math.pow(10, logCenter + (1 - normY) * nextSpan),
         nyquist
       );
       onUpdatePrefs({ minFreq: lo, maxFreq: hi });
     } else {
       const span = prefs.maxFreq - prefs.minFreq;
-      const center = prefs.minFreq + norm * span;
+      const center = prefs.minFreq + normY * span;
       const nextSpan = Math.max(40, Math.min(nyquist - 20, span * zoomFactor));
-      const [lo, hi] = clampFreqRange(center - norm * nextSpan, center + (1 - norm) * nextSpan, nyquist);
+      const [lo, hi] = clampFreqRange(
+        center - normY * nextSpan,
+        center + (1 - normY) * nextSpan,
+        nyquist
+      );
       onUpdatePrefs({ minFreq: lo, maxFreq: hi });
     }
   };
@@ -388,6 +471,8 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
     dragRef.current = {
       active: true,
       startX: e.clientX,
+      startY: e.clientY,
+      startScrollBack: effectiveScrollBack,
       startMin: prefs.minFreq,
       startMax: prefs.maxFreq,
     };
@@ -397,24 +482,37 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
     inspectAtClient(e.clientX, e.clientY);
     if (!dragRef.current?.active || !canvasRef.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
-    const plotW = Math.max(10, rect.width - 100);
-    const dxNorm = (e.clientX - dragRef.current.startX) / plotW;
+    const plotW = Math.max(10, rect.width - 104);
+    const plotH = Math.max(10, rect.height - 44);
 
+    // Horizontal drag scrubs time history (drag right = pull older data in)
+    const dxNorm = (e.clientX - dragRef.current.startX) / plotW;
+    const nextScroll = Math.max(
+      0,
+      Math.min(
+        maxScrollBackSec,
+        dragRef.current.startScrollBack + dxNorm * prefs.historyDurationSec
+      )
+    );
+    setScrollBackSec(nextScroll);
+
+    // Vertical drag pans frequency range
+    const dyNorm = (e.clientY - dragRef.current.startY) / plotH;
     if (prefs.freqScale === 'log') {
       const logMin = Math.log10(Math.max(20, dragRef.current.startMin));
       const logMax = Math.log10(Math.max(21, dragRef.current.startMax));
       const span = logMax - logMin;
       const [lo, hi] = clampFreqRange(
-        Math.pow(10, logMin - dxNorm * span),
-        Math.pow(10, logMax - dxNorm * span),
+        Math.pow(10, logMin + dyNorm * span),
+        Math.pow(10, logMax + dyNorm * span),
         nyquist
       );
       onUpdatePrefs({ minFreq: lo, maxFreq: hi });
     } else {
       const span = dragRef.current.startMax - dragRef.current.startMin;
       const [lo, hi] = clampFreqRange(
-        dragRef.current.startMin - dxNorm * span,
-        dragRef.current.startMax - dxNorm * span,
+        dragRef.current.startMin + dyNorm * span,
+        dragRef.current.startMax + dyNorm * span,
         nyquist
       );
       onUpdatePrefs({ minFreq: lo, maxFreq: hi });
@@ -428,6 +526,8 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
       dragRef.current = {
         active: true,
         startX: t.clientX,
+        startY: t.clientY,
+        startScrollBack: effectiveScrollBack,
         startMin: prefs.minFreq,
         startMax: prefs.maxFreq,
       };
@@ -437,10 +537,10 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
       const t2 = e.touches[1];
       const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
       const rect = canvasRef.current.getBoundingClientRect();
-      const midX = (t1.clientX + t2.clientX) / 2 - rect.left;
-      const plotW = Math.max(10, rect.width - 100);
-      const norm = Math.max(0, Math.min(1, (midX - 48) / plotW));
-      const centerFreq = normToFreq(norm, prefs.minFreq, prefs.maxFreq, prefs.freqScale);
+      const midY = (t1.clientY + t2.clientY) / 2 - rect.top;
+      const plotH = Math.max(10, rect.height - 44);
+      const normY = Math.max(0, Math.min(1, 1 - (midY - 16) / plotH));
+      const centerFreq = normToFreq(normY, prefs.minFreq, prefs.maxFreq, prefs.freqScale);
       pinchRef.current = {
         initialDist: Math.max(10, dist),
         centerFreq,
@@ -456,23 +556,35 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
       const t = e.touches[0];
       inspectAtClient(t.clientX, t.clientY);
       const rect = canvasRef.current.getBoundingClientRect();
-      const plotW = Math.max(10, rect.width - 100);
+      const plotW = Math.max(10, rect.width - 104);
+      const plotH = Math.max(10, rect.height - 44);
+
       const dxNorm = (t.clientX - dragRef.current.startX) / plotW;
+      const nextScroll = Math.max(
+        0,
+        Math.min(
+          maxScrollBackSec,
+          dragRef.current.startScrollBack + dxNorm * prefs.historyDurationSec
+        )
+      );
+      setScrollBackSec(nextScroll);
+
+      const dyNorm = (t.clientY - dragRef.current.startY) / plotH;
       if (prefs.freqScale === 'log') {
         const lMin = Math.log10(Math.max(20, dragRef.current.startMin));
         const lMax = Math.log10(Math.max(21, dragRef.current.startMax));
         const span = lMax - lMin;
         const [lo, hi] = clampFreqRange(
-          Math.pow(10, lMin - dxNorm * span),
-          Math.pow(10, lMax - dxNorm * span),
+          Math.pow(10, lMin + dyNorm * span),
+          Math.pow(10, lMax + dyNorm * span),
           nyquist
         );
         onUpdatePrefs({ minFreq: lo, maxFreq: hi });
       } else {
         const span = dragRef.current.startMax - dragRef.current.startMin;
         const [lo, hi] = clampFreqRange(
-          dragRef.current.startMin - dxNorm * span,
-          dragRef.current.startMax - dxNorm * span,
+          dragRef.current.startMin + dyNorm * span,
+          dragRef.current.startMax + dyNorm * span,
           nyquist
         );
         onUpdatePrefs({ minFreq: lo, maxFreq: hi });
@@ -486,7 +598,10 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
         const lMin = Math.log10(Math.max(20, pinchRef.current.startMin));
         const lMax = Math.log10(Math.max(21, pinchRef.current.startMax));
         const lCenter = Math.log10(Math.max(20, pinchRef.current.centerFreq));
-        const newSpan = Math.max(0.08, Math.min(Math.log10(nyquist / 20), (lMax - lMin) * scale));
+        const newSpan = Math.max(
+          0.08,
+          Math.min(Math.log10(nyquist / 20), (lMax - lMin) * scale)
+        );
         const ratio = (lCenter - lMin) / Math.max(0.001, lMax - lMin);
         const [lo, hi] = clampFreqRange(
           Math.pow(10, lCenter - ratio * newSpan),
@@ -497,7 +612,8 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
       } else {
         const span = pinchRef.current.startMax - pinchRef.current.startMin;
         const newSpan = Math.max(40, Math.min(nyquist - 20, span * scale));
-        const ratio = (pinchRef.current.centerFreq - pinchRef.current.startMin) / Math.max(1, span);
+        const ratio =
+          (pinchRef.current.centerFreq - pinchRef.current.startMin) / Math.max(1, span);
         const [lo, hi] = clampFreqRange(
           pinchRef.current.centerFreq - ratio * newSpan,
           pinchRef.current.centerFreq + (1 - ratio) * newSpan,
@@ -508,28 +624,24 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
     }
   };
 
+  const viewEndReferenceMs =
+    frameCount > 0 ? latestMs - effectiveScrollBack * 1000 : undefined;
+
   const handleExportPNG = () => {
     if (canvasRef.current) exportCanvasToPNG(canvasRef.current, 'spectral_spectrograph');
   };
 
   const handleExportCSV = () => {
-    const csv = formatSpectrographCSV(buffer, fftSize, prefs);
+    const csv = formatSpectrographCSV(buffer, fftSize, prefs, viewEndReferenceMs);
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
     triggerFileDownload(csv, `spectral_spectrograph_${ts}.csv`, 'text/csv;charset=utf-8;');
   };
 
   const handleExportJSON = () => {
-    const json = formatSpectrographJSON(buffer, fftSize, prefs);
+    const json = formatSpectrographJSON(buffer, fftSize, prefs, viewEndReferenceMs);
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
     triggerFileDownload(json, `spectral_spectrograph_${ts}.json`, 'application/json');
   };
-
-  const capturedSeconds = Math.min(
-    60,
-    buffer.getFrameCount() > 1
-      ? (buffer.getLatestTimestamp() - buffer.getTimestampAt(0)) / 1000
-      : 0
-  );
 
   return (
     <div className="viz-view">
@@ -556,6 +668,28 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
         />
 
         <div className="canvas-hud-top-left">
+          {isPaused && (
+            <div
+              className="hud-pill"
+              style={{
+                color: '#fda4af',
+                borderColor: 'rgba(244, 63, 94, 0.5)',
+              }}
+            >
+              <strong>PAUSED</strong>
+            </div>
+          )}
+          {effectiveScrollBack > 0.05 && (
+            <div
+              className="hud-pill"
+              style={{
+                color: '#7dd3fc',
+                borderColor: 'rgba(56, 189, 248, 0.45)',
+              }}
+            >
+              <strong>-{effectiveScrollBack.toFixed(1)}s</strong>
+            </div>
+          )}
           <div className="hud-pill">
             <span>Window</span>
             <strong>{prefs.historyDurationSec}s</strong>
@@ -581,8 +715,9 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
           <div className="empty-audio-overlay">
             <h3>60-Second Spectrograph Ready</h3>
             <p>
-              Captures up to 60 seconds of raw FFT frames so you can retroactively zoom,
-              switch Log/Linear scale, change color palettes, or export CSV/JSON/PNG.
+              Scrolls right-to-left (newest on right) and stores up to 60 seconds of raw FFT
+              frames. Drag horizontally to scroll back in time, or zoom/filter frequency and dB
+              ranges retroactively.
             </p>
             <div className="empty-overlay-actions">
               <button type="button" className="btn btn-primary" onClick={onStartMic}>
@@ -601,18 +736,33 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
           className="mobile-summary-text"
           style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}
         >
-          {prefs.historyDurationSec}s History • {prefs.colormap} • {prefs.freqScale.toUpperCase()}
+          {prefs.historyDurationSec}s • {prefs.colormap} • {prefs.freqScale.toUpperCase()}
         </span>
-        <button
-          type="button"
-          className="btn"
-          aria-expanded={controlsOpen}
-          aria-label="Toggle Spectrograph Controls"
-          onClick={() => setControlsOpen((v) => !v)}
-        >
-          <SlidersHorizontal size={14} />
-          <span className="desktop-only-label">Controls</span>
-        </button>
+        <div className="mobile-bar-actions">
+          <button
+            type="button"
+            className={`btn btn-icon-only-landscape ${isPaused ? 'btn-active-mic' : ''}`}
+            disabled={!isAudioActive && frameCount === 0}
+            aria-label={isPaused ? 'Resume Spectrograph' : 'Pause Spectrograph'}
+            title={isPaused ? 'Resume' : 'Pause'}
+            onClick={onTogglePause}
+          >
+            {isPaused ? <Play size={14} /> : <Pause size={14} />}
+            <span className="mobile-portrait-label">
+              {isPaused ? 'Resume' : 'Pause'}
+            </span>
+          </button>
+          <button
+            type="button"
+            className="btn btn-icon-only"
+            aria-expanded={controlsOpen}
+            aria-label="Toggle Spectrograph Controls"
+            title="Toggle Spectrograph Controls"
+            onClick={() => setControlsOpen((v) => !v)}
+          >
+            <SlidersHorizontal size={14} />
+          </button>
+        </div>
       </div>
 
       <div className={`controls-dock ${controlsOpen ? '' : 'collapsed'}`}>
@@ -633,18 +783,47 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
         </div>
 
         <div className="control-group">
+          <span className="control-label">Time Scroll</span>
+          <input
+            type="range"
+            aria-label="Scroll Back in Time"
+            className="range-slider"
+            disabled={maxScrollBackSec <= 0.1}
+            min={0}
+            max={Math.max(0.5, Number(maxScrollBackSec.toFixed(1)))}
+            step={0.1}
+            value={effectiveScrollBack}
+            onChange={(e) => setScrollBackSec(Number(e.target.value))}
+          />
+          <span className="mono-val" style={{ minWidth: 50, textAlign: 'right' }}>
+            {effectiveScrollBack <= 0.05 ? 'Live' : `-${effectiveScrollBack.toFixed(1)}s`}
+          </span>
+          {effectiveScrollBack > 0.05 && (
+            <button
+              type="button"
+              className="btn btn-icon-only"
+              title="Jump to Live (0s)"
+              aria-label="Jump to Live"
+              onClick={() => setScrollBackSec(0)}
+            >
+              <RotateCcw size={13} />
+            </button>
+          )}
+        </div>
+
+        <div className="control-group">
           <span className="control-label">Time Smooth</span>
           <input
             type="range"
             aria-label="Spectrograph Time Smoothing"
             className="range-slider"
             min={0}
-            max={0.95}
-            step={0.05}
-            value={prefs.timeSmoothing}
-            onChange={(e) => onUpdatePrefs({ timeSmoothing: Number(e.target.value) })}
+            max={300}
+            step={10}
+            value={prefs.timeSmoothingMs}
+            onChange={(e) => onUpdatePrefs({ timeSmoothingMs: Number(e.target.value) })}
           />
-          <span className="mono-val">{Math.round(prefs.timeSmoothing * 100)}%</span>
+          <span className="mono-val">{prefs.timeSmoothingMs} ms</span>
         </div>
 
         <div className="control-group">
@@ -663,21 +842,6 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
           </select>
         </div>
 
-        <div className="control-group">
-          <span className="control-label">Floor dB</span>
-          <input
-            type="range"
-            aria-label="Spectrograph Floor dB"
-            className="range-slider"
-            min={-110}
-            max={-30}
-            step={5}
-            value={prefs.minDb}
-            onChange={(e) => onUpdatePrefs({ minDb: Number(e.target.value) })}
-          />
-          <span className="mono-val">{prefs.minDb}</span>
-        </div>
-
         <FrequencyZoomControls
           minFreq={prefs.minFreq}
           maxFreq={prefs.maxFreq}
@@ -687,12 +851,32 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
           onScaleChange={(freqScale) => onUpdatePrefs({ freqScale })}
         />
 
+        <DbRangeControls
+          minDb={prefs.minDb}
+          maxDb={prefs.maxDb}
+          defaultMinDb={-95}
+          defaultMaxDb={-5}
+          onChange={(minDb, maxDb) => onUpdatePrefs({ minDb, maxDb })}
+        />
+
         <div className="control-group">
+          <button
+            type="button"
+            className={`btn desktop-only-btn ${isPaused ? 'btn-active-mic' : ''}`}
+            disabled={!isAudioActive && frameCount === 0}
+            onClick={onTogglePause}
+          >
+            {isPaused ? <Play size={13} /> : <Pause size={13} />}
+            <span>{isPaused ? 'Resume' : 'Pause'}</span>
+          </button>
           <button
             type="button"
             className="btn"
             title="Clear Spectrograph History"
-            onClick={onClearBuffer}
+            onClick={() => {
+              setScrollBackSec(0);
+              onClearBuffer();
+            }}
           >
             <Trash2 size={13} /> Clear
           </button>

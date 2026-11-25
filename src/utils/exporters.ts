@@ -11,7 +11,7 @@ export interface SpectrumExportMeta {
   minFreq: number;
   maxFreq: number;
   freqScale: string;
-  timeSmoothing: number;
+  timeSmoothingMs: number;
   octaveSmoothing: string;
 }
 
@@ -22,7 +22,7 @@ export interface SpectrographExportMeta {
   minFreq: number;
   maxFreq: number;
   freqScale: string;
-  timeSmoothing: number;
+  timeSmoothingMs: number;
   historyDurationSec: number;
   colormap: string;
   frameCount: number;
@@ -113,7 +113,7 @@ export function formatSpectrumJSON(
     minFreq: prefs.minFreq,
     maxFreq: prefs.maxFreq,
     freqScale: prefs.freqScale,
-    timeSmoothing: prefs.timeSmoothing,
+    timeSmoothingMs: prefs.timeSmoothingMs,
     octaveSmoothing: octaveLabel(prefs.octaveSmoothing),
   };
 
@@ -153,9 +153,10 @@ function selectBinIndices(
 export function formatSpectrographCSV(
   buffer: SpectrographBuffer,
   fftSize: number,
-  prefs: SpectrographPreferences
+  prefs: SpectrographPreferences,
+  referenceNowMs?: number
 ): string {
-  const slice = buffer.getHistorySlice(prefs.historyDurationSec);
+  const slice = buffer.getHistorySlice(prefs.historyDurationSec, referenceNowMs);
   const binWidth = slice.sampleRate / fftSize;
   const binIndices = selectBinIndices(
     slice.numBins,
@@ -199,9 +200,10 @@ export function formatSpectrographCSV(
 export function formatSpectrographJSON(
   buffer: SpectrographBuffer,
   fftSize: number,
-  prefs: SpectrographPreferences
+  prefs: SpectrographPreferences,
+  referenceNowMs?: number
 ): string {
-  const slice = buffer.getHistorySlice(prefs.historyDurationSec);
+  const slice = buffer.getHistorySlice(prefs.historyDurationSec, referenceNowMs);
   const binWidth = slice.sampleRate / fftSize;
   const binIndices = selectBinIndices(
     slice.numBins,
@@ -240,7 +242,7 @@ export function formatSpectrographJSON(
     minFreq: prefs.minFreq,
     maxFreq: prefs.maxFreq,
     freqScale: prefs.freqScale,
-    timeSmoothing: prefs.timeSmoothing,
+    timeSmoothingMs: prefs.timeSmoothingMs,
     historyDurationSec: prefs.historyDurationSec,
     colormap: prefs.colormap,
     frameCount: framesOut.length,

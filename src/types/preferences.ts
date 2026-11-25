@@ -21,12 +21,17 @@ export interface AudioPreferences {
   demoMode: DemoSignalMode;
 }
 
+export type TiltSlope = 0 | 3 | 4.5;
+
 export interface SpectrumAnalyzerPreferences {
   minFreq: number;
   maxFreq: number;
   freqScale: FreqScale;
-  timeSmoothing: number; // 0.0 to 0.98
+  timeSmoothingMs: number; // 0 to 1000 ms
   octaveSmoothing: OctaveSmoothing;
+  tiltSlope: TiltSlope;
+  minDb: number;
+  maxDb: number;
   showPeakHold: boolean;
   peakDecayRate: number; // dB per frame
   fillArea: boolean;
@@ -37,7 +42,7 @@ export interface SpectrographPreferences {
   minFreq: number;
   maxFreq: number;
   freqScale: FreqScale;
-  timeSmoothing: number; // 0.0 to 0.98
+  timeSmoothingMs: number; // 0 to 1000 ms
   historyDurationSec: HistoryDurationSec;
   colormap: ColormapId;
   minDb: number;
@@ -76,8 +81,11 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
     minFreq: 20,
     maxFreq: 20000,
     freqScale: 'log',
-    timeSmoothing: 0.72,
+    timeSmoothingMs: 60,
     octaveSmoothing: 0,
+    tiltSlope: 0,
+    minDb: -100,
+    maxDb: 0,
     showPeakHold: true,
     peakDecayRate: 0.08,
     fillArea: true,
@@ -87,7 +95,7 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
     minFreq: 20,
     maxFreq: 20000,
     freqScale: 'log',
-    timeSmoothing: 0.45,
+    timeSmoothingMs: 30,
     historyDurationSec: 30,
     colormap: 'magma',
     minDb: -95,

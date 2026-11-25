@@ -18,7 +18,7 @@ import {
   loadPreferences,
   savePreferences,
 } from '../hooks/usePreferences';
-import { frequencyToNoteInfo } from '../utils/music';
+import { frequencyToNoteInfo, timeConstantMsToAlpha } from '../utils/music';
 
 function generateSine(freqHz: number, sampleRate: number, length: number): Float32Array {
   const out = new Float32Array(length);
@@ -97,6 +97,16 @@ describe('Spectral WASM DSP & Core Modules', () => {
   });
 
   describe('Time Smoothing & Peak Hold', () => {
+    it('converts time smoothing constants in ms to exponential smoothing alpha', () => {
+      expect(timeConstantMsToAlpha(0, 16.67)).toBe(0);
+      const alpha60 = timeConstantMsToAlpha(60, 1000 / 60);
+      const alpha500 = timeConstantMsToAlpha(500, 1000 / 60);
+      expect(alpha60).toBeGreaterThan(0.7);
+      expect(alpha60).toBeLessThan(0.8);
+      expect(alpha500).toBeGreaterThan(alpha60);
+      expect(alpha500).toBeLessThan(1);
+    });
+
     it('applies exponential moving average and tracks decaying peak hold', () => {
       const curr = new Float32Array([-20, -40, -60]);
       const smoothed = new Float32Array([-80, -80, -80]);
@@ -178,6 +188,15 @@ describe('Spectral WASM DSP & Core Modules', () => {
       // Oldest frame after 4000 pushes in 3600-capacity ring is frame #400
       const oldestView = buffer.getFrameView(0);
       expect(oldestView?.[0]).toBeCloseTo(-100 + (400 % 80), 3);
+
+      // Scrolled-back window slice (5s ending 10s before latest)
+      const latestTs = buffer.getLatestTimestamp();
+      const scrolledSlice = buffer.getHistorySlice(5, latestTs - 10000);
+      expect(scrolledSlice.frames.length).toBeGreaterThanOrEqual(299);
+      expect(scrolledSlice.frames.length).toBeLessThanOrEqual(302);
+      expect(
+        scrolledSlice.timestampsMs[scrolledSlice.timestampsMs.length - 1]
+      ).toBeLessThanOrEqual(latestTs - 10000);
     });
   });
 
