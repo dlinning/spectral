@@ -339,7 +339,7 @@ export const SpectrographView: React.FC = () => {
         {!isAudioActive && buffer.getFrameCount() === 0 && (
           <EmptyAudioOverlay
             title="60-Second Spectrograph Ready"
-            description="Scrolls right-to-left (newest on right) and stores up to 60 seconds of raw FFT frames. Drag horizontally to scroll back in time, or zoom/filter frequency and dB ranges retroactively."
+            description="Enable the microphone to begin. Drag horizontally to scroll back in time, or zoom/filter frequency and dB ranges."
             onStartMic={() => void startMicrophone()}
           />
         )}

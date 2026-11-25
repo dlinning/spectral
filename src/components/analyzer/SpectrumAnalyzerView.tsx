@@ -387,7 +387,7 @@ export const SpectrumAnalyzerView: React.FC = () => {
         {!isAudioActive && (
           <EmptyAudioOverlay
             title="Spectrum Analyzer Ready"
-            description="Start your microphone for real-time acoustic analysis. Pinch with two fingers to zoom or drag to pan frequency ranges."
+            description="Enable the microphone to begin. Pinch with two fingers to zoom or drag to pan frequency ranges."
             onStartMic={() => void startMicrophone()}
           />
         )}
