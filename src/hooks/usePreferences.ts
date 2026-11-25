@@ -29,7 +29,8 @@ export function mergePreferences(
   const validTab =
     stored.activeTab === 'analyzer' ||
     stored.activeTab === 'spectrogram' ||
-    stored.activeTab === 'tuner'
+    stored.activeTab === 'tuner' ||
+    stored.activeTab === 'decibels'
       ? stored.activeTab
       : defaults.activeTab;
 

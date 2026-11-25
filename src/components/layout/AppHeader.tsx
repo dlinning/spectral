@@ -1,5 +1,5 @@
+import { Activity, BarChart3, EighthNote, Mic, MicOff, Settings, Volume2 } from 'lucide-react';
 import React, { useState } from 'react';
-import { Activity, BarChart3, Gauge, Mic, MicOff, Settings } from 'lucide-react';
 import { useAudio } from '../../contexts/AudioContext';
 import { usePreferencesContext } from '../../contexts/PreferencesContext';
 import { AppTab } from '../../types/preferences';
@@ -8,7 +8,8 @@ import { AudioSettingsPopover } from './AudioSettingsPopover';
 const NAV_TABS: readonly { id: AppTab; label: string; Icon: React.FC<{ size?: number }> }[] = [
   { id: 'analyzer', label: 'Spectrum Analyzer', Icon: BarChart3 },
   { id: 'spectrogram', label: 'Spectrogram', Icon: Activity },
-  { id: 'tuner', label: 'Tuner', Icon: Gauge },
+  { id: 'tuner', label: 'Tuner', Icon: EighthNote },
+  { id: 'decibels', label: 'Decibels', Icon: Volume2 },
 ];
 
 export const AppHeader: React.FC = () => {

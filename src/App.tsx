@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { SpectrumAnalyzerView } from './components/analyzer/SpectrumAnalyzerView';
+import { DecibelsView } from './components/decibels/DecibelsView';
 import { AppHeader } from './components/layout/AppHeader';
 import { SpectrogramView } from './components/spectrogram/SpectrogramView';
 import { MusicalTunerView } from './components/tuner/MusicalTunerView';
@@ -70,6 +71,7 @@ const AppShell: React.FC = () => {
         {preferences.activeTab === 'analyzer' && <SpectrumAnalyzerView />}
         {preferences.activeTab === 'spectrogram' && <SpectrogramView />}
         {preferences.activeTab === 'tuner' && <MusicalTunerView />}
+        {preferences.activeTab === 'decibels' && <DecibelsView />}
       </main>
     </div>
   );

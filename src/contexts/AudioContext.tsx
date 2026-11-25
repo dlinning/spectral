@@ -13,6 +13,12 @@ import { timeConstantMsToAlpha } from '../utils/music';
 import { dspBridge } from '../wasm/dspBridge';
 import { usePreferencesContext } from './PreferencesContext';
 
+export interface SavedDecibelReading {
+  id: number;
+  db: number;
+  timestamp: number;
+}
+
 interface AudioContextValue {
   sourceKind: AudioSourceKind;
   isAudioActive: boolean;
@@ -25,6 +31,8 @@ interface AudioContextValue {
   spectrogramBuffer: SpectrogramBuffer;
   latestBinsRef: React.MutableRefObject<Float32Array>;
   latestTimeDomainRef: React.MutableRefObject<Float32Array>;
+  savedDecibelReadings: SavedDecibelReading[];
+  saveDecibelReading: (db: number) => void;
   startMicrophone: (deviceIdOverride?: string) => Promise<void>;
   stopAudio: () => void;
   clearError: () => void;
@@ -70,6 +78,8 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [spectrogramPaused, setSpectrogramPaused] = useState<boolean>(false);
   const [isTonePlaying, setIsTonePlaying] = useState<boolean>(false);
   const [frameTick, setFrameTick] = useState<number>(0);
+  const [savedDecibelReadings, setSavedDecibelReadings] = useState<SavedDecibelReading[]>([]);
+  const nextSavedIdRef = useRef<number>(1);
 
   const latestBinsRef = useRef<Float32Array>(new Float32Array(fftSize / 2).fill(-110));
   const spectroSmoothedRef = useRef<Float32Array>(new Float32Array(fftSize / 2).fill(-110));
@@ -201,6 +211,12 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setIsTonePlaying(false);
   }, [audioEngine]);
 
+  const saveDecibelReading = useCallback((db: number) => {
+    const id = nextSavedIdRef.current++;
+    const timestamp = Date.now();
+    setSavedDecibelReadings((prev) => [{ id, db, timestamp }, ...prev]);
+  }, []);
+
   const value = useMemo<AudioContextValue>(
     () => ({
       sourceKind,
@@ -214,6 +230,8 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       spectrogramBuffer,
       latestBinsRef,
       latestTimeDomainRef,
+      savedDecibelReadings,
+      saveDecibelReading,
       startMicrophone,
       stopAudio,
       clearError,
@@ -233,6 +251,8 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       spectrogramPaused,
       isTonePlaying,
       spectrogramBuffer,
+      savedDecibelReadings,
+      saveDecibelReading,
       startMicrophone,
       stopAudio,
       clearError,

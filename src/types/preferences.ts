@@ -1,4 +1,4 @@
-export type AppTab = 'analyzer' | 'spectrogram' | 'tuner';
+export type AppTab = 'analyzer' | 'spectrogram' | 'tuner' | 'decibels';
 
 export type FreqScale = 'log' | 'linear';
 
