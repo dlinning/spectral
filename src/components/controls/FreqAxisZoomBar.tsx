@@ -2,9 +2,12 @@ import React, { useRef } from 'react';
 import { RotateCcw } from 'lucide-react';
 import { FreqScale } from '../../types/preferences';
 import {
+  LOG_STANDARD_TICKS,
   MAX_DISPLAY_FREQ_HZ,
   clampFreqRange,
+  formatFreqTick,
   freqToNorm,
+  getFrequencyTicks,
   normToFreq,
   zoomFreqRange,
 } from '../../utils/music';
@@ -20,6 +23,8 @@ interface FreqAxisZoomBarProps {
 }
 
 type DragMode = 'min' | 'max' | 'pan';
+
+const MIN_SPAN_HZ = 20;
 
 export const FreqAxisZoomBar: React.FC<FreqAxisZoomBarProps> = ({
   minFreq,
@@ -42,10 +47,32 @@ export const FreqAxisZoomBar: React.FC<FreqAxisZoomBarProps> = ({
   const absMax = Math.min(MAX_DISPLAY_FREQ_HZ, Math.max(1000, Math.floor(nyquist / 100) * 100));
   const defaultMaxHz = Math.min(20000, absMax);
   const isZoomed = minFreq > 25 || Math.abs(maxFreq - defaultMaxHz) > 150;
+  const ticks = getFrequencyTicks(absMin, absMax, freqScale);
+
+  const standardSnapPoints = Array.from(
+    new Set([
+      absMin,
+      absMax,
+      ...ticks,
+      ...LOG_STANDARD_TICKS.filter((f) => f >= absMin && f <= absMax),
+    ])
+  );
 
   const snapHz = (hz: number) => {
-    if (hz <= 55) return 20;
-    return Math.max(100, Math.min(absMax, Math.round(hz / 100) * 100));
+    const clampedHz = Math.max(absMin, Math.min(absMax, hz));
+    const step100 = Math.max(100, Math.min(absMax, Math.round(clampedHz / 100) * 100));
+    const candidates = [...standardSnapPoints, step100];
+    const targetNorm = freqToNorm(clampedHz, absMin, absMax, freqScale);
+    let best = step100;
+    let bestDist = Infinity;
+    for (const candidate of candidates) {
+      const dist = Math.abs(freqToNorm(candidate, absMin, absMax, freqScale) - targetNorm);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = candidate;
+      }
+    }
+    return best;
   };
 
   const leftPct = Math.max(0, Math.min(100, freqToNorm(minFreq, absMin, absMax, freqScale) * 100));
@@ -70,14 +97,14 @@ export const FreqAxisZoomBar: React.FC<FreqAxisZoomBarProps> = ({
       if (dragRef.current.mode === 'min') {
         const norm = Math.max(0, Math.min(1, (ev.clientX - rect.left) / width));
         const rawFreq = normToFreq(norm, absMin, absMax, freqScale);
-        const nextMin = Math.min(snapHz(rawFreq), dragRef.current.startMax - 100);
-        const [lo, hi] = clampFreqRange(nextMin, dragRef.current.startMax, absMax, 100);
+        const nextMin = Math.min(snapHz(rawFreq), dragRef.current.startMax - MIN_SPAN_HZ);
+        const [lo, hi] = clampFreqRange(nextMin, dragRef.current.startMax, absMax, MIN_SPAN_HZ);
         onRangeChange(lo, hi);
       } else if (dragRef.current.mode === 'max') {
         const norm = Math.max(0, Math.min(1, (ev.clientX - rect.left) / width));
         const rawFreq = normToFreq(norm, absMin, absMax, freqScale);
-        const nextMax = Math.max(snapHz(rawFreq), dragRef.current.startMin + 100);
-        const [lo, hi] = clampFreqRange(dragRef.current.startMin, nextMax, absMax, 100);
+        const nextMax = Math.max(snapHz(rawFreq), dragRef.current.startMin + MIN_SPAN_HZ);
+        const [lo, hi] = clampFreqRange(dragRef.current.startMin, nextMax, absMax, MIN_SPAN_HZ);
         onRangeChange(lo, hi);
       } else {
         const dxNorm = (ev.clientX - dragRef.current.startX) / width;
@@ -98,7 +125,12 @@ export const FreqAxisZoomBar: React.FC<FreqAxisZoomBarProps> = ({
             nextHi = lAbsMax;
             nextLo = lAbsMax - span;
           }
-          const [lo, hi] = clampFreqRange(Math.pow(10, nextLo), Math.pow(10, nextHi), absMax, 100);
+          const [lo, hi] = clampFreqRange(
+            Math.pow(10, nextLo),
+            Math.pow(10, nextHi),
+            absMax,
+            MIN_SPAN_HZ
+          );
           onRangeChange(lo, hi);
         } else {
           const span = dragRef.current.startMax - dragRef.current.startMin;
@@ -113,7 +145,7 @@ export const FreqAxisZoomBar: React.FC<FreqAxisZoomBarProps> = ({
             nextHi = absMax;
             nextLo = absMax - span;
           }
-          const [lo, hi] = clampFreqRange(nextLo, nextHi, absMax, 100);
+          const [lo, hi] = clampFreqRange(nextLo, nextHi, absMax, MIN_SPAN_HZ);
           onRangeChange(lo, hi);
         }
       }
@@ -145,7 +177,7 @@ export const FreqAxisZoomBar: React.FC<FreqAxisZoomBarProps> = ({
       zoomFactor,
       absMax,
       freqScale,
-      100
+      MIN_SPAN_HZ
     );
     onRangeChange(lo, hi);
   };
@@ -158,6 +190,21 @@ export const FreqAxisZoomBar: React.FC<FreqAxisZoomBarProps> = ({
       title="Drag Min/Max handles or scroll mouse wheel to zoom frequency range"
     >
       <div ref={trackRef} className="freq-axis-zoom-track">
+        {ticks.map((tick) => {
+          const pct = Math.max(0, Math.min(100, freqToNorm(tick, absMin, absMax, freqScale) * 100));
+          const alignClass =
+            pct <= 2 ? 'freq-axis-tick-start' : pct >= 98 ? 'freq-axis-tick-end' : '';
+          return (
+            <div
+              key={tick}
+              className={`freq-axis-tick ${alignClass}`.trim()}
+              style={{ left: `${pct}%` }}
+              aria-hidden="true"
+            >
+              <span className="freq-axis-tick-label">{formatFreqTick(tick)}</span>
+            </div>
+          );
+        })}
         <div
           className="freq-axis-zoom-window"
           style={{
@@ -174,7 +221,7 @@ export const FreqAxisZoomBar: React.FC<FreqAxisZoomBarProps> = ({
             tabIndex={0}
             aria-label="Minimum Frequency Grab Handle"
             aria-valuemin={absMin}
-            aria-valuemax={maxFreq - 100}
+            aria-valuemax={maxFreq - MIN_SPAN_HZ}
             aria-valuenow={minFreq}
             className="freq-axis-handle freq-axis-handle-min"
             onPointerDown={(e) => {
@@ -187,7 +234,7 @@ export const FreqAxisZoomBar: React.FC<FreqAxisZoomBarProps> = ({
             role="slider"
             tabIndex={0}
             aria-label="Maximum Frequency Grab Handle"
-            aria-valuemin={minFreq + 100}
+            aria-valuemin={minFreq + MIN_SPAN_HZ}
             aria-valuemax={absMax}
             aria-valuenow={maxFreq}
             className="freq-axis-handle freq-axis-handle-max"

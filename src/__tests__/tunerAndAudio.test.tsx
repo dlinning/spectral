@@ -1073,7 +1073,7 @@ describe('Tuner Defaults, Tone Frequency Slider & Focus-Loss Behavior', () => {
     vi.unstubAllGlobals();
   });
 
-  it('renders FreqAxisZoomBar without ticks, supports wheel zoom on log/linear scale, and provides an icon-only reset button on the right', () => {
+  it('renders FreqAxisZoomBar with tick marks on track, supports wheel zoom on log/linear scale, and provides an icon-only reset button on the right', () => {
     const onRangeChange = vi.fn();
 
     render(
@@ -1093,6 +1093,7 @@ describe('Tuner Defaults, Tone Frequency Slider & Focus-Loss Behavior', () => {
 
     expect(bar).not.toBeNull();
     expect(track).not.toBeNull();
+    expect(track.querySelectorAll('.freq-axis-tick').length).toBeGreaterThan(0);
     expect(zoomWindow.querySelectorAll('.freq-axis-tick')).toHaveLength(0);
     expect(resetBtn).not.toBeNull();
     expect(resetBtn.textContent).toBe('');
@@ -1146,6 +1147,56 @@ describe('Tuner Defaults, Tone Frequency Slider & Focus-Loss Behavior', () => {
       window.dispatchEvent(new Event('pointerup', { bubbles: true }));
     });
     expect(onRangeChange.mock.calls.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('renders log standard tick marks including 50 Hz and snaps handles to 50 Hz without enforcing a 100 Hz step', () => {
+    const onRangeChange = vi.fn();
+
+    render(
+      <FreqAxisZoomBar
+        minFreq={20}
+        maxFreq={100}
+        nyquist={20000}
+        freqScale="log"
+        onRangeChange={onRangeChange}
+      />
+    );
+
+    const track = container.querySelector('.freq-axis-zoom-track') as HTMLElement;
+    const tickLabels = Array.from(track.querySelectorAll('.freq-axis-tick-label')).map(
+      (el) => el.textContent
+    );
+    expect(tickLabels).toEqual(['20', '50', '100', '200', '500', '1k', '2k', '5k', '10k', '20k']);
+
+    vi.spyOn(track, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      top: 0,
+      right: 700,
+      bottom: 14,
+      width: 700,
+      height: 14,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+
+    // 50 Hz in log [20, 20000] is at log10(50/20) / log10(1000) * 700 ≈ 92.85px
+    const minHandle = container.querySelector(
+      '[aria-label="Minimum Frequency Grab Handle"]'
+    ) as HTMLElement;
+    act(() => {
+      const down = new Event('pointerdown', { bubbles: true, cancelable: true });
+      Object.defineProperty(down, 'clientX', { value: 0 });
+      minHandle.dispatchEvent(down);
+    });
+    act(() => {
+      const move = new Event('pointermove', { bubbles: true, cancelable: true });
+      Object.defineProperty(move, 'clientX', { value: 93 });
+      window.dispatchEvent(move);
+      window.dispatchEvent(new Event('pointerup', { bubbles: true }));
+    });
+
+    expect(onRangeChange).toHaveBeenLastCalledWith(50, 100);
   });
 
   it('keeps .freq-axis-zoom-bar rendered below the chart even when controls panel starts collapsed', () => {

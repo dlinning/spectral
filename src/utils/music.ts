@@ -156,7 +156,7 @@ export function timeConstantMsToAlpha(tauMs: number, dtMs = 1000 / 60): number {
   return Math.exp(-safeDt / tauMs);
 }
 
-const LOG_STANDARD_TICKS = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
+export const LOG_STANDARD_TICKS = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
 
 const LOG_ZOOM_CANDIDATES = [
   10, 15, 20, 30, 40, 50, 60, 80, 100, 150, 200, 300, 400, 500, 600, 800, 1000, 1500, 2000, 3000,
