@@ -24,8 +24,12 @@ export interface PlotBounds {
   plotH: number;
 }
 
-export function getSpectrumPlotBounds(width: number, height: number): PlotBounds {
-  const { left: padLeft, right: padRight, top: padTop, bottom: padBottom } = SPECTRUM_PLOT_PADDING;
+export function getSpectrumPlotBounds(width: number, height: number, labelFontPx = 11): PlotBounds {
+  const extra = Math.max(0, labelFontPx - 11);
+  const padLeft = SPECTRUM_PLOT_PADDING.left + extra * 4;
+  const padRight = SPECTRUM_PLOT_PADDING.right + extra * 2;
+  const padTop = SPECTRUM_PLOT_PADDING.top;
+  const padBottom = SPECTRUM_PLOT_PADDING.bottom + extra * 2;
   return {
     padLeft,
     padRight,
@@ -34,6 +38,84 @@ export function getSpectrumPlotBounds(width: number, height: number): PlotBounds
     plotW: Math.max(10, width - padLeft - padRight),
     plotH: Math.max(10, height - padTop - padBottom),
   };
+}
+
+export function scaleSpectrumCursor(
+  cursor: { x: number; y: number } | null,
+  sourceWidth: number,
+  sourceHeight: number,
+  targetWidth: number,
+  targetHeight: number,
+  targetLabelFontPx = 11
+): { x: number; y: number } | null {
+  if (!cursor) return null;
+  const src = getSpectrumPlotBounds(sourceWidth, sourceHeight);
+  if (
+    cursor.x < src.padLeft ||
+    cursor.x > src.padLeft + src.plotW ||
+    cursor.y < src.padTop ||
+    cursor.y > src.padTop + src.plotH
+  ) {
+    return null;
+  }
+  const dst = getSpectrumPlotBounds(targetWidth, targetHeight, targetLabelFontPx);
+  const normX = (cursor.x - src.padLeft) / src.plotW;
+  const normY = (cursor.y - src.padTop) / src.plotH;
+  return {
+    x: dst.padLeft + normX * dst.plotW,
+    y: dst.padTop + normY * dst.plotH,
+  };
+}
+
+export function getSpectrumPeakDbInRange(
+  displayData: Float32Array,
+  peakHoldData: Float32Array,
+  showPeakHold: boolean,
+  prefs: SpectrumAnalyzerPreferences,
+  sampleRate: number,
+  fftSize: number,
+  numBins: number,
+  plotW: number
+): number | null {
+  if (numBins <= 1 || plotW <= 0) return null;
+  const binWidth = sampleRate / fftSize;
+  let peakDb = -Infinity;
+  const samples = Math.max(64, Math.min(2000, Math.round(plotW)));
+
+  for (let i = 0; i <= samples; i++) {
+    const px = (i / samples) * plotW;
+    const val = sampleSpectrumColumnDb(
+      displayData,
+      px,
+      plotW,
+      prefs.minFreq,
+      prefs.maxFreq,
+      prefs.freqScale,
+      binWidth,
+      numBins,
+      prefs.octaveSmoothing,
+      prefs.tiltSlope
+    );
+    if (Number.isFinite(val) && val > peakDb) peakDb = val;
+
+    if (showPeakHold) {
+      const holdVal = sampleSpectrumColumnDb(
+        peakHoldData,
+        px,
+        plotW,
+        prefs.minFreq,
+        prefs.maxFreq,
+        prefs.freqScale,
+        binWidth,
+        numBins,
+        prefs.octaveSmoothing,
+        prefs.tiltSlope
+      );
+      if (Number.isFinite(holdVal) && holdVal > peakDb) peakDb = holdVal;
+    }
+  }
+
+  return Number.isFinite(peakDb) && peakDb > -150 ? peakDb : null;
 }
 
 export function computeTiltOffset(freqHz: number, tiltSlope: number): number {
@@ -90,6 +172,7 @@ export interface SpectrumRenderParams {
   displayData: Float32Array;
   peakHoldData: Float32Array;
   cursor: { x: number; y: number } | null;
+  labelFontPx?: number;
 }
 
 export interface SpectrumCursorTrack {
@@ -114,9 +197,10 @@ export function renderSpectrumCanvas(
     displayData,
     peakHoldData,
     cursor,
+    labelFontPx = 11,
   } = params;
 
-  const { padLeft, padTop, plotW, plotH } = getSpectrumPlotBounds(w, h);
+  const { padLeft, padTop, plotW, plotH } = getSpectrumPlotBounds(w, h, labelFontPx);
 
   ctx.save();
   ctx.scale(dpr, dpr);
@@ -129,7 +213,7 @@ export function renderSpectrumCanvas(
 
   // Horizontal dB grid lines
   ctx.lineWidth = 1;
-  ctx.font = '11px JetBrains Mono, monospace';
+  ctx.font = `${labelFontPx}px JetBrains Mono, monospace`;
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
 
@@ -316,28 +400,27 @@ export function renderSpectrumCanvas(
 
   // Highlighted axis badges for targeted dB and frequency
   if (tracked && cursor) {
-    ctx.font = 'bold 11px JetBrains Mono, monospace';
+    ctx.font = `bold ${labelFontPx}px JetBrains Mono, monospace`;
+    const badgeH = labelFontPx + 7;
 
     const dbText = `${tracked.db.toFixed(1)}`;
     const dbBadgeW = padLeft - 4;
-    const dbBadgeH = 18;
-    const dbBadgeY = Math.max(padTop, Math.min(padTop + plotH - dbBadgeH, trackedY - dbBadgeH / 2));
+    const dbBadgeY = Math.max(padTop, Math.min(padTop + plotH - badgeH, trackedY - badgeH / 2));
     ctx.fillStyle = '#0e7490';
     ctx.strokeStyle = '#22d3ee';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.roundRect(2, dbBadgeY, dbBadgeW, dbBadgeH, 4);
+    ctx.roundRect(2, dbBadgeY, dbBadgeW, badgeH, 4);
     ctx.fill();
     ctx.stroke();
     ctx.fillStyle = '#f8fafc';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
-    ctx.fillText(dbText, padLeft - 6, dbBadgeY + dbBadgeH / 2);
+    ctx.fillText(dbText, padLeft - 6, dbBadgeY + badgeH / 2);
 
     const freqText = formatFrequency(tracked.freq);
     const freqTextW = ctx.measureText(freqText).width;
-    const freqBadgeW = freqTextW + 12;
-    const freqBadgeH = 18;
+    const freqBadgeW = freqTextW + 14;
     const freqBadgeX = Math.max(
       padLeft,
       Math.min(padLeft + plotW - freqBadgeW, cursor.x - freqBadgeW / 2)
@@ -346,13 +429,13 @@ export function renderSpectrumCanvas(
     ctx.fillStyle = '#0e7490';
     ctx.strokeStyle = '#22d3ee';
     ctx.beginPath();
-    ctx.roundRect(freqBadgeX, freqBadgeY, freqBadgeW, freqBadgeH, 4);
+    ctx.roundRect(freqBadgeX, freqBadgeY, freqBadgeW, badgeH, 4);
     ctx.fill();
     ctx.stroke();
     ctx.fillStyle = '#f8fafc';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(freqText, freqBadgeX + freqBadgeW / 2, freqBadgeY + freqBadgeH / 2);
+    ctx.fillText(freqText, freqBadgeX + freqBadgeW / 2, freqBadgeY + badgeH / 2);
   }
 
   ctx.restore();

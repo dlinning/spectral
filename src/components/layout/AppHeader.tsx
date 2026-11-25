@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Activity, BarChart3, Gauge, Mic, MicOff, Settings2 } from 'lucide-react';
+import { Activity, BarChart3, Gauge, Mic, MicOff, Settings } from 'lucide-react';
 import { useAudio } from '../../contexts/AudioContext';
 import { usePreferencesContext } from '../../contexts/PreferencesContext';
 import { AppTab } from '../../types/preferences';
@@ -62,7 +62,7 @@ export const AppHeader: React.FC = () => {
             aria-expanded={settingsOpen}
             onClick={() => setSettingsOpen((v) => !v)}
           >
-            <Settings2 size={15} />
+            <Settings size={15} />
           </button>
 
           {settingsOpen && <AudioSettingsPopover onClose={() => setSettingsOpen(false)} />}

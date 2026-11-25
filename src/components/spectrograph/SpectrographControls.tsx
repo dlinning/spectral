@@ -137,7 +137,7 @@ export const SpectrographControls: React.FC<SpectrographControlsProps> = ({
       <div className="control-group">
         <button
           type="button"
-          className="btn"
+          className="btn desktop-only-btn"
           title="Clear Spectrograph History"
           onClick={onClearHistory}
         >

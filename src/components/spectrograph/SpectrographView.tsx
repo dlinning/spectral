@@ -4,9 +4,13 @@ import { usePreferencesContext } from '../../contexts/PreferencesContext';
 import { useElementSize } from '../../hooks/useElementSize';
 import { prepareCanvas2d } from '../../utils/canvas';
 import {
+  EXPORT_LABEL_FONT_PX,
+  computePaddedExportMaxDb,
+  createHighResExportCanvas,
   exportCanvasToPNG,
   formatSpectrographCSV,
   formatSpectrographJSON,
+  getPngExportDimensions,
   triggerFileDownload,
 } from '../../utils/exporters';
 import {
@@ -21,7 +25,9 @@ import { EmptyAudioOverlay } from '../layout/EmptyAudioOverlay';
 import { SpectrographControls } from './SpectrographControls';
 import {
   SpectrographHoverInfo,
+  getSpectrographPeakDbInRange,
   getSpectrographPlotBounds,
+  getSpectrographTargetPoint,
   inspectSpectrographPoint,
   renderSpectrographCanvas,
 } from './spectrographRenderer';
@@ -57,12 +63,24 @@ export const SpectrographView: React.FC = () => {
 
   const dragRef = useRef<{
     active: boolean;
+    mode: 'reticle' | 'pan';
     startX: number;
     startY: number;
+    startedOnTarget: boolean;
+    moved: boolean;
     startScrollBack: number;
     startMin: number;
     startMax: number;
   } | null>(null);
+
+  const touchTapRef = useRef<{
+    startX: number;
+    startY: number;
+    startedOnTarget: boolean;
+    moved: boolean;
+  } | null>(null);
+
+  const lastTouchTimeRef = useRef<number>(-Infinity);
 
   const pinchRef = useRef<{
     initialDist: number;
@@ -104,6 +122,7 @@ export const SpectrographView: React.FC = () => {
       frameCount,
       earliestMs,
       latestMs,
+      target: hoverInfo,
     });
   }, [
     frameTick,
@@ -116,25 +135,54 @@ export const SpectrographView: React.FC = () => {
     frameCount,
     earliestMs,
     latestMs,
+    hoverInfo,
   ]);
+
+  const isInsidePlot = (clientX: number, clientY: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return false;
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    const { padLeft, padTop, plotW, plotH } = getSpectrographPlotBounds(rect.width, rect.height);
+    return x >= padLeft && x <= padLeft + plotW && y >= padTop && y <= padTop + plotH;
+  };
+
+  const isOnActiveTarget = (clientX: number, clientY: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas || !hoverInfo) return false;
+    const rect = canvas.getBoundingClientRect();
+    const pt = getSpectrographTargetPoint(
+      hoverInfo,
+      rect.width,
+      rect.height,
+      prefs,
+      effectiveScrollBack
+    );
+    if (!pt) return false;
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    return Math.hypot(x - pt.x, y - pt.y) <= 20 || Math.abs(x - pt.x) <= 16;
+  };
 
   const inspectAtClient = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    setHoverInfo(
-      inspectSpectrographPoint(
-        buffer,
-        clientX,
-        clientY,
-        canvas.getBoundingClientRect(),
-        prefs,
-        fftSize,
-        sampleRate,
-        effectiveScrollBack,
-        frameCount,
-        latestMs
-      )
+    const info = inspectSpectrographPoint(
+      buffer,
+      clientX,
+      clientY,
+      canvas.getBoundingClientRect(),
+      prefs,
+      fftSize,
+      sampleRate,
+      effectiveScrollBack,
+      frameCount,
+      latestMs
     );
+    if (info) {
+      setHoverInfo(info);
+    }
   };
 
   const applyDrag = (clientX: number, clientY: number) => {
@@ -187,10 +235,19 @@ export const SpectrographView: React.FC = () => {
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (performance.now() - lastTouchTimeRef.current < 800) return;
+    const startedOnTarget =
+      !e.shiftKey &&
+      e.button !== 1 &&
+      isInsidePlot(e.clientX, e.clientY) &&
+      isOnActiveTarget(e.clientX, e.clientY);
     dragRef.current = {
       active: true,
+      mode: startedOnTarget ? 'reticle' : 'pan',
       startX: e.clientX,
       startY: e.clientY,
+      startedOnTarget,
+      moved: false,
       startScrollBack: effectiveScrollBack,
       startMin: prefs.minFreq,
       startMax: prefs.maxFreq,
@@ -198,23 +255,54 @@ export const SpectrographView: React.FC = () => {
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    inspectAtClient(e.clientX, e.clientY);
-    applyDrag(e.clientX, e.clientY);
+    if (performance.now() - lastTouchTimeRef.current < 800) return;
+    if (!dragRef.current?.active) return;
+    if (Math.hypot(e.clientX - dragRef.current.startX, e.clientY - dragRef.current.startY) > 4) {
+      dragRef.current.moved = true;
+    }
+    if (!dragRef.current.moved) return;
+    if (dragRef.current.mode === 'reticle') {
+      inspectAtClient(e.clientX, e.clientY);
+    } else {
+      applyDrag(e.clientX, e.clientY);
+    }
+  };
+
+  const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (performance.now() - lastTouchTimeRef.current < 800) {
+      dragRef.current = null;
+      return;
+    }
+    if (dragRef.current?.active && !dragRef.current.moved) {
+      if (dragRef.current.startedOnTarget) {
+        setHoverInfo(null);
+      } else if (isInsidePlot(e.clientX, e.clientY)) {
+        inspectAtClient(e.clientX, e.clientY);
+      }
+    }
+    dragRef.current = null;
   };
 
   const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    lastTouchTimeRef.current = performance.now();
     if (e.touches.length === 1) {
       const t = e.touches[0];
-      inspectAtClient(t.clientX, t.clientY);
-      dragRef.current = {
-        active: true,
-        startX: t.clientX,
-        startY: t.clientY,
-        startScrollBack: effectiveScrollBack,
-        startMin: prefs.minFreq,
-        startMax: prefs.maxFreq,
-      };
+      dragRef.current = null;
       pinchRef.current = null;
+      if (isInsidePlot(t.clientX, t.clientY)) {
+        const startedOnTarget = isOnActiveTarget(t.clientX, t.clientY);
+        touchTapRef.current = {
+          startX: t.clientX,
+          startY: t.clientY,
+          startedOnTarget,
+          moved: false,
+        };
+        if (!startedOnTarget) {
+          inspectAtClient(t.clientX, t.clientY);
+        }
+      } else {
+        touchTapRef.current = null;
+      }
     } else if (e.touches.length === 2 && canvasRef.current) {
       const t1 = e.touches[0];
       const t2 = e.touches[1];
@@ -231,14 +319,27 @@ export const SpectrographView: React.FC = () => {
         startMax: prefs.maxFreq,
       };
       dragRef.current = null;
+      touchTapRef.current = null;
     }
   };
 
   const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
-    if (e.touches.length === 1 && dragRef.current?.active) {
+    lastTouchTimeRef.current = performance.now();
+    if (e.touches.length === 1) {
       const t = e.touches[0];
-      inspectAtClient(t.clientX, t.clientY);
-      applyDrag(t.clientX, t.clientY);
+      if (touchTapRef.current) {
+        if (
+          Math.hypot(
+            t.clientX - touchTapRef.current.startX,
+            t.clientY - touchTapRef.current.startY
+          ) > 6
+        ) {
+          touchTapRef.current.moved = true;
+        }
+      }
+      if (!touchTapRef.current || touchTapRef.current.moved) {
+        inspectAtClient(t.clientX, t.clientY);
+      }
     } else if (e.touches.length === 2 && pinchRef.current) {
       const t1 = e.touches[0];
       const t2 = e.touches[1];
@@ -256,10 +357,70 @@ export const SpectrographView: React.FC = () => {
     }
   };
 
+  const handleTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    lastTouchTimeRef.current = performance.now();
+    dragRef.current = null;
+    if (
+      e.touches.length === 0 &&
+      touchTapRef.current?.startedOnTarget &&
+      !touchTapRef.current.moved
+    ) {
+      setHoverInfo(null);
+    }
+    if (e.touches.length === 0) {
+      touchTapRef.current = null;
+    }
+    if (e.touches.length < 2) {
+      pinchRef.current = null;
+    }
+  };
+
   const viewEndReferenceMs = frameCount > 0 ? latestMs - effectiveScrollBack * 1000 : undefined;
 
   const handleExportPNG = () => {
-    if (canvasRef.current) exportCanvasToPNG(canvasRef.current, 'spectral_spectrograph');
+    const tempOffscreenRef = { current: null as HTMLCanvasElement | null };
+    const tempImageDataRef = { current: null as ImageData | null };
+    const { width: exportW, height: exportH } = getPngExportDimensions(size.width, size.height);
+    const exportBounds = getSpectrographPlotBounds(exportW, exportH, EXPORT_LABEL_FONT_PX);
+    const peakDb = getSpectrographPeakDbInRange(
+      buffer,
+      prefs,
+      sampleRate,
+      fftSize,
+      effectiveScrollBack,
+      frameCount,
+      latestMs
+    );
+    const exportPrefs = {
+      ...prefs,
+      maxDb: computePaddedExportMaxDb(peakDb, prefs.minDb, prefs.maxDb),
+    };
+
+    const exportCanvas = createHighResExportCanvas(
+      size.width,
+      size.height,
+      `Spectrograph • ${formatFrequency(prefs.minFreq)} – ${formatFrequency(prefs.maxFreq)} • ${prefs.historyDurationSec}s`,
+      (ctx, width, height, dpr) => {
+        renderSpectrographCanvas(ctx, tempOffscreenRef, tempImageDataRef, {
+          width,
+          height,
+          dpr,
+          prefs: exportPrefs,
+          buffer,
+          sampleRate,
+          fftSize,
+          effectiveScrollBack,
+          frameCount,
+          earliestMs,
+          latestMs,
+          target: hoverInfo,
+          labelFontPx: EXPORT_LABEL_FONT_PX,
+        });
+      },
+      exportBounds.padLeft,
+      exportBounds.padRight
+    );
+    exportCanvasToPNG(exportCanvas, 'spectral_spectrograph');
   };
 
   const handleExportCSV = () => {
@@ -274,6 +435,11 @@ export const SpectrographView: React.FC = () => {
     triggerFileDownload(json, `spectral_spectrograph_${ts}.json`, 'application/json');
   };
 
+  const handleClearHistory = () => {
+    setScrollBackSec(0);
+    clearSpectrographBuffer();
+  };
+
   return (
     <div className="viz-view">
       <div className="canvas-stage" ref={containerRef}>
@@ -283,19 +449,14 @@ export const SpectrographView: React.FC = () => {
           onWheel={handleWheel}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
-          onMouseUp={() => {
-            dragRef.current = null;
-          }}
+          onMouseUp={handleMouseUp}
           onMouseLeave={() => {
-            setHoverInfo(null);
             dragRef.current = null;
           }}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
-          onTouchEnd={() => {
-            dragRef.current = null;
-            pinchRef.current = null;
-          }}
+          onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchEnd}
         />
 
         <div className="canvas-hud-top-left">
@@ -324,7 +485,6 @@ export const SpectrographView: React.FC = () => {
           <div className="hud-pill">
             <span>Window</span>
             <strong>{prefs.historyDurationSec}s</strong>
-            <span>({capturedSeconds.toFixed(1)}s stored)</span>
           </div>
           <div className="hud-pill">
             <span>Range</span>
@@ -359,8 +519,10 @@ export const SpectrographView: React.FC = () => {
         pauseLabel="Pause Spectrograph"
         resumeLabel="Resume Spectrograph"
         toggleControlsLabel="Toggle Spectrograph Controls"
+        clearLabel="Clear Spectrograph History"
         onTogglePause={toggleSpectrographPause}
         onToggleControls={() => setControlsOpen((v) => !v)}
+        onClear={handleClearHistory}
       />
 
       <SpectrographControls
@@ -370,10 +532,7 @@ export const SpectrographView: React.FC = () => {
         maxScrollBackSec={maxScrollBackSec}
         effectiveScrollBack={effectiveScrollBack}
         onScrollBackChange={setScrollBackSec}
-        onClearHistory={() => {
-          setScrollBackSec(0);
-          clearSpectrographBuffer();
-        }}
+        onClearHistory={handleClearHistory}
         onExportPNG={handleExportPNG}
         onExportCSV={handleExportCSV}
         onExportJSON={handleExportJSON}

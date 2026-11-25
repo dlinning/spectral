@@ -41,6 +41,96 @@ export function triggerFileDownload(content: BlobPart, filename: string, mimeTyp
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+export const MIN_PNG_EXPORT_WIDTH = 1500;
+export const EXPORT_HEADER_HEIGHT = 38;
+export const EXPORT_LABEL_FONT_PX = 16;
+
+export function computePaddedExportMaxDb(
+  peakDb: number | null,
+  minDb: number,
+  currentMaxDb: number
+): number {
+  if (peakDb === null || !Number.isFinite(peakDb)) {
+    return currentMaxDb;
+  }
+  const ceiling = Math.min(0, currentMaxDb);
+  const floor = Math.min(ceiling, minDb + 10);
+  const padded = Math.ceil((peakDb + 10) / 10) * 10;
+  return Math.max(floor, Math.min(ceiling, padded));
+}
+
+export function formatExportTimestamp(date: Date = new Date()): string {
+  const pad2 = (n: number) => String(n).padStart(2, '0');
+  const y = date.getFullYear();
+  const m = pad2(date.getMonth() + 1);
+  const d = pad2(date.getDate());
+  const hh = pad2(date.getHours());
+  const mm = pad2(date.getMinutes());
+  const ss = pad2(date.getSeconds());
+  return `${y}-${m}-${d} ${hh}:${mm}:${ss}`;
+}
+
+export function getPngExportDimensions(
+  sourceCssWidth: number,
+  sourceCssHeight: number,
+  deviceDpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1
+): { width: number; height: number; dpr: number } {
+  const dpr = Math.max(1, Math.min(deviceDpr || 1, 2));
+  const safeW = Math.max(1, sourceCssWidth);
+  const safeH = Math.max(1, sourceCssHeight);
+
+  if (safeW * dpr >= MIN_PNG_EXPORT_WIDTH && safeW >= 750) {
+    return { width: Math.round(safeW), height: Math.round(safeH), dpr };
+  }
+
+  const width = Math.max(MIN_PNG_EXPORT_WIDTH, Math.round(safeW));
+  const rawHeight = Math.round((width * safeH) / safeW);
+  const height = Math.max(540, Math.min(1125, rawHeight));
+  return { width, height, dpr: 1 };
+}
+
+export function createHighResExportCanvas(
+  sourceCssWidth: number,
+  sourceCssHeight: number,
+  headerTitle: string,
+  renderChart: (ctx: CanvasRenderingContext2D, width: number, height: number, dpr: number) => void,
+  padLeft = 46,
+  padRight = 22,
+  timestamp: Date = new Date()
+): HTMLCanvasElement {
+  const { width, height, dpr } = getPngExportDimensions(sourceCssWidth, sourceCssHeight);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(MIN_PNG_EXPORT_WIDTH, Math.round(width * dpr));
+  canvas.height = Math.round((EXPORT_HEADER_HEIGHT + height) * dpr);
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+
+  ctx.save();
+  ctx.scale(dpr, dpr);
+  ctx.fillStyle = '#060a12';
+  ctx.fillRect(0, 0, width, EXPORT_HEADER_HEIGHT + height);
+
+  ctx.font = '600 15px Inter, -apple-system, BlinkMacSystemFont, sans-serif';
+  ctx.fillStyle = '#e2e8f0';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(headerTitle, padLeft, EXPORT_HEADER_HEIGHT / 2 + 2);
+
+  ctx.font = '14px JetBrains Mono, monospace';
+  ctx.fillStyle = '#94a3b8';
+  ctx.textAlign = 'right';
+  ctx.fillText(formatExportTimestamp(timestamp), width - padRight, EXPORT_HEADER_HEIGHT / 2 + 2);
+  ctx.restore();
+
+  ctx.save();
+  ctx.translate(0, EXPORT_HEADER_HEIGHT * dpr);
+  renderChart(ctx, width, height, dpr);
+  ctx.restore();
+
+  return canvas;
+}
+
 export function exportCanvasToPNG(canvas: HTMLCanvasElement, filenamePrefix: string): void {
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const dataUrl = canvas.toDataURL('image/png');

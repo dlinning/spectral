@@ -1,4 +1,5 @@
 import React, { useRef } from 'react';
+import { RotateCcw } from 'lucide-react';
 import { FreqScale } from '../../types/preferences';
 import {
   MAX_DISPLAY_FREQ_HZ,
@@ -39,6 +40,8 @@ export const FreqAxisZoomBar: React.FC<FreqAxisZoomBarProps> = ({
 
   const absMin = 20;
   const absMax = Math.min(MAX_DISPLAY_FREQ_HZ, Math.max(1000, Math.floor(nyquist / 100) * 100));
+  const defaultMaxHz = Math.min(20000, absMax);
+  const isZoomed = minFreq > 25 || Math.abs(maxFreq - defaultMaxHz) > 150;
 
   const snapHz = (hz: number) => {
     if (hz <= 55) return 20;
@@ -59,7 +62,7 @@ export const FreqAxisZoomBar: React.FC<FreqAxisZoomBarProps> = ({
       startMax: maxFreq,
     };
 
-    const handleMove = (ev: MouseEvent) => {
+    const handleMove = (ev: PointerEvent) => {
       if (!dragRef.current || !trackRef.current) return;
       const rect = trackRef.current.getBoundingClientRect();
       const width = Math.max(20, rect.width);
@@ -118,12 +121,14 @@ export const FreqAxisZoomBar: React.FC<FreqAxisZoomBarProps> = ({
 
     const handleUp = () => {
       dragRef.current = null;
-      window.removeEventListener('mousemove', handleMove);
-      window.removeEventListener('mouseup', handleUp);
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+      window.removeEventListener('pointercancel', handleUp);
     };
 
-    window.addEventListener('mousemove', handleMove);
-    window.addEventListener('mouseup', handleUp);
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+    window.addEventListener('pointercancel', handleUp);
   };
 
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
@@ -142,16 +147,13 @@ export const FreqAxisZoomBar: React.FC<FreqAxisZoomBarProps> = ({
       freqScale,
       100
     );
-    onRangeChange(
-      freqScale === 'linear' ? snapHz(lo) : lo,
-      freqScale === 'linear' ? snapHz(hi) : hi
-    );
+    onRangeChange(lo, hi);
   };
 
   return (
     <div
       className="freq-axis-zoom-bar"
-      style={{ paddingLeft: padLeft, paddingRight: padRight }}
+      style={{ paddingLeft: padLeft, paddingRight: Math.max(10, padRight - 8) }}
       onWheel={handleWheel}
       title="Drag Min/Max handles or scroll mouse wheel to zoom frequency range"
     >
@@ -162,7 +164,7 @@ export const FreqAxisZoomBar: React.FC<FreqAxisZoomBarProps> = ({
             left: `${leftPct}%`,
             width: `${Math.max(1.5, rightPct - leftPct)}%`,
           }}
-          onMouseDown={(e) => {
+          onPointerDown={(e) => {
             e.preventDefault();
             startDrag('pan', e.clientX);
           }}
@@ -175,7 +177,7 @@ export const FreqAxisZoomBar: React.FC<FreqAxisZoomBarProps> = ({
             aria-valuemax={maxFreq - 100}
             aria-valuenow={minFreq}
             className="freq-axis-handle freq-axis-handle-min"
-            onMouseDown={(e) => {
+            onPointerDown={(e) => {
               e.stopPropagation();
               e.preventDefault();
               startDrag('min', e.clientX);
@@ -189,7 +191,7 @@ export const FreqAxisZoomBar: React.FC<FreqAxisZoomBarProps> = ({
             aria-valuemax={absMax}
             aria-valuenow={maxFreq}
             className="freq-axis-handle freq-axis-handle-max"
-            onMouseDown={(e) => {
+            onPointerDown={(e) => {
               e.stopPropagation();
               e.preventDefault();
               startDrag('max', e.clientX);
@@ -197,6 +199,18 @@ export const FreqAxisZoomBar: React.FC<FreqAxisZoomBarProps> = ({
           />
         </div>
       </div>
+
+      <button
+        type="button"
+        className="btn btn-icon-only freq-axis-reset-btn"
+        disabled={!isZoomed}
+        style={{ opacity: isZoomed ? 1 : 0.35, cursor: isZoomed ? 'pointer' : 'default' }}
+        title="Reset Zoom"
+        aria-label="Reset Frequency Zoom"
+        onClick={() => onRangeChange(absMin, defaultMaxHz)}
+      >
+        <RotateCcw size={13} />
+      </button>
     </div>
   );
 };

@@ -4,9 +4,13 @@ import { usePreferencesContext } from '../../contexts/PreferencesContext';
 import { useElementSize } from '../../hooks/useElementSize';
 import { prepareCanvas2d } from '../../utils/canvas';
 import {
+  EXPORT_LABEL_FONT_PX,
+  computePaddedExportMaxDb,
+  createHighResExportCanvas,
   exportCanvasToPNG,
   formatSpectrumCSV,
   formatSpectrumJSON,
+  getPngExportDimensions,
   triggerFileDownload,
 } from '../../utils/exporters';
 import {
@@ -24,10 +28,11 @@ import { MobileControlsBar } from '../controls/MobileControlsBar';
 import { EmptyAudioOverlay } from '../layout/EmptyAudioOverlay';
 import { AnalyzerControls } from './AnalyzerControls';
 import {
-  SPECTRUM_PLOT_PADDING,
   computeTiltOffset,
+  getSpectrumPeakDbInRange,
   getSpectrumPlotBounds,
   renderSpectrumCanvas,
+  scaleSpectrumCursor,
 } from './spectrumRenderer';
 
 export const SpectrumAnalyzerView: React.FC = () => {
@@ -72,10 +77,24 @@ export const SpectrumAnalyzerView: React.FC = () => {
 
   const dragRef = useRef<{
     active: boolean;
+    mode: 'reticle' | 'pan';
     startX: number;
+    startY: number;
+    startedOnReticle: boolean;
+    moved: boolean;
     startMin: number;
     startMax: number;
   } | null>(null);
+
+  const touchTapRef = useRef<{
+    startX: number;
+    startY: number;
+    startedOnReticle: boolean;
+    moved: boolean;
+  } | null>(null);
+
+  const lastTouchTimeRef = useRef<number>(-Infinity);
+  const lastRenderedFrameTickRef = useRef<number>(-1);
 
   const pinchRef = useRef<{
     initialDist: number;
@@ -110,8 +129,11 @@ export const SpectrumAnalyzerView: React.FC = () => {
     const dtMs = nowMs - lastFrameMsRef.current;
     lastFrameMsRef.current = nowMs;
 
+    const frameAdvanced = frameTick !== lastRenderedFrameTickRef.current;
+    lastRenderedFrameTickRef.current = frameTick;
+
     if (isAudioActive && numBins > 0) {
-      if (!isPaused) {
+      if (!isPaused && frameAdvanced) {
         const alpha = timeConstantMsToAlpha(prefs.timeSmoothingMs, dtMs);
         dspBridge.applyTimeSmoothing(raw, timeSmoothedRef.current, alpha);
       }
@@ -120,7 +142,7 @@ export const SpectrumAnalyzerView: React.FC = () => {
         octaveSmoothedRef.current,
         prefs.octaveSmoothing
       );
-      if (prefs.showPeakHold && !isPaused) {
+      if (prefs.showPeakHold && !isPaused && frameAdvanced) {
         dspBridge.updatePeakHold(
           octaveSmoothedRef.current,
           peakHoldRef.current,
@@ -148,7 +170,41 @@ export const SpectrumAnalyzerView: React.FC = () => {
       if (hudNoteRef.current) hudNoteRef.current.textContent = `(${tracked.noteText})`;
       if (hudDbRef.current) hudDbRef.current.textContent = `${tracked.db.toFixed(1)} dB`;
     }
-  }, [frameTick, isAudioActive, isPaused, prefs, sampleRate, fftSize, size, latestBinsRef]);
+  }, [
+    frameTick,
+    isAudioActive,
+    isPaused,
+    prefs,
+    sampleRate,
+    fftSize,
+    size,
+    latestBinsRef,
+    cursorReadout,
+  ]);
+
+  const isInsidePlot = (clientX: number, clientY: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return false;
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    const { padLeft, padTop, plotW, plotH } = getSpectrumPlotBounds(rect.width, rect.height);
+    return x >= padLeft && x <= padLeft + plotW && y >= padTop && y <= padTop + plotH;
+  };
+
+  const isOnActiveReticle = (clientX: number, clientY: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas || !cursorRef.current) return false;
+    if (!isInsidePlot(clientX, clientY)) return false;
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    return Math.abs(x - cursorRef.current.x) <= 18;
+  };
+
+  const clearReticle = () => {
+    cursorRef.current = null;
+    setCursorReadout(null);
+  };
 
   const updateCursorFromClient = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
@@ -156,13 +212,12 @@ export const SpectrumAnalyzerView: React.FC = () => {
     const rect = canvas.getBoundingClientRect();
     const x = clientX - rect.left;
     const y = clientY - rect.top;
-    cursorRef.current = { x, y };
 
     const { padLeft, padTop, plotW, plotH } = getSpectrumPlotBounds(rect.width, rect.height);
     if (x < padLeft || x > padLeft + plotW || y < padTop || y > padTop + plotH) {
-      setCursorReadout(null);
       return;
     }
+    cursorRef.current = { x, y };
 
     const normX = (x - padLeft) / plotW;
     const normY = (y - padTop) / plotH;
@@ -209,41 +264,103 @@ export const SpectrumAnalyzerView: React.FC = () => {
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (performance.now() - lastTouchTimeRef.current < 800) return;
+    if (e.shiftKey || e.button === 1) {
+      dragRef.current = {
+        active: true,
+        mode: 'pan',
+        startX: e.clientX,
+        startY: e.clientY,
+        startedOnReticle: false,
+        moved: false,
+        startMin: prefs.minFreq,
+        startMax: prefs.maxFreq,
+      };
+      return;
+    }
+
+    const inside = isInsidePlot(e.clientX, e.clientY);
+    const startedOnReticle = inside && isOnActiveReticle(e.clientX, e.clientY);
     dragRef.current = {
-      active: true,
+      active: inside,
+      mode: 'reticle',
       startX: e.clientX,
+      startY: e.clientY,
+      startedOnReticle,
+      moved: false,
       startMin: prefs.minFreq,
       startMax: prefs.maxFreq,
     };
+    if (inside && !startedOnReticle) {
+      updateCursorFromClient(e.clientX, e.clientY);
+    }
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    updateCursorFromClient(e.clientX, e.clientY);
+    if (performance.now() - lastTouchTimeRef.current < 800) return;
     if (!dragRef.current?.active || !canvasRef.current) return;
-    const rect = canvasRef.current.getBoundingClientRect();
-    const { plotW } = getSpectrumPlotBounds(rect.width, rect.height);
-    const dxNorm = (e.clientX - dragRef.current.startX) / plotW;
-    const [lo, hi] = panFreqRange(
-      dragRef.current.startMin,
-      dragRef.current.startMax,
-      -dxNorm,
-      nyquist,
-      prefs.freqScale
-    );
-    updateAnalyzerPrefs({ minFreq: lo, maxFreq: hi });
+    if (Math.hypot(e.clientX - dragRef.current.startX, e.clientY - dragRef.current.startY) > 4) {
+      dragRef.current.moved = true;
+    }
+
+    if (dragRef.current.mode === 'pan') {
+      if (!dragRef.current.moved) return;
+      const rect = canvasRef.current.getBoundingClientRect();
+      const { plotW } = getSpectrumPlotBounds(rect.width, rect.height);
+      const dxNorm = (e.clientX - dragRef.current.startX) / plotW;
+      const [lo, hi] = panFreqRange(
+        dragRef.current.startMin,
+        dragRef.current.startMax,
+        -dxNorm,
+        nyquist,
+        prefs.freqScale
+      );
+      updateAnalyzerPrefs({ minFreq: lo, maxFreq: hi });
+      return;
+    }
+
+    if (dragRef.current.moved || !dragRef.current.startedOnReticle) {
+      updateCursorFromClient(e.clientX, e.clientY);
+    }
   };
 
   const handleMouseUp = () => {
+    if (performance.now() - lastTouchTimeRef.current < 800) {
+      dragRef.current = null;
+      return;
+    }
+    if (
+      dragRef.current?.active &&
+      dragRef.current.mode === 'reticle' &&
+      dragRef.current.startedOnReticle &&
+      !dragRef.current.moved
+    ) {
+      clearReticle();
+    }
     dragRef.current = null;
   };
 
-  // Touch support: single-finger inspects cursor; two-finger pinch zooms & pans frequency range
+  // Touch support: single-finger tap toggles/moves reticle; drag inspects; two-finger pinch zooms & pans
   const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    lastTouchTimeRef.current = performance.now();
     if (e.touches.length === 1) {
       const t = e.touches[0];
-      updateCursorFromClient(t.clientX, t.clientY);
       dragRef.current = null;
       pinchRef.current = null;
+      if (isInsidePlot(t.clientX, t.clientY)) {
+        const startedOnReticle = isOnActiveReticle(t.clientX, t.clientY);
+        touchTapRef.current = {
+          startX: t.clientX,
+          startY: t.clientY,
+          startedOnReticle,
+          moved: false,
+        };
+        if (!startedOnReticle) {
+          updateCursorFromClient(t.clientX, t.clientY);
+        }
+      } else {
+        touchTapRef.current = null;
+      }
     } else if (e.touches.length === 2 && canvasRef.current) {
       const t1 = e.touches[0];
       const t2 = e.touches[1];
@@ -261,13 +378,27 @@ export const SpectrumAnalyzerView: React.FC = () => {
         startMax: prefs.maxFreq,
       };
       dragRef.current = null;
+      touchTapRef.current = null;
     }
   };
 
   const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    lastTouchTimeRef.current = performance.now();
     if (e.touches.length === 1) {
       const t = e.touches[0];
-      updateCursorFromClient(t.clientX, t.clientY);
+      if (touchTapRef.current) {
+        if (
+          Math.hypot(
+            t.clientX - touchTapRef.current.startX,
+            t.clientY - touchTapRef.current.startY
+          ) > 6
+        ) {
+          touchTapRef.current.moved = true;
+        }
+      }
+      if (!touchTapRef.current || touchTapRef.current.moved) {
+        updateCursorFromClient(t.clientX, t.clientY);
+      }
     } else if (e.touches.length === 2 && pinchRef.current && canvasRef.current) {
       const t1 = e.touches[0];
       const t2 = e.touches[1];
@@ -291,14 +422,75 @@ export const SpectrumAnalyzerView: React.FC = () => {
   };
 
   const handleTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    lastTouchTimeRef.current = performance.now();
     dragRef.current = null;
+    if (
+      e.touches.length === 0 &&
+      touchTapRef.current?.startedOnReticle &&
+      !touchTapRef.current.moved
+    ) {
+      clearReticle();
+    }
+    if (e.touches.length === 0) {
+      touchTapRef.current = null;
+    }
     if (e.touches.length < 2) {
       pinchRef.current = null;
     }
   };
 
   const handleExportPNG = () => {
-    if (canvasRef.current) exportCanvasToPNG(canvasRef.current, 'spectral_analyzer');
+    const numBins = Math.min(latestBinsRef.current.length, timeSmoothedRef.current.length);
+    const { width: exportW, height: exportH } = getPngExportDimensions(size.width, size.height);
+    const exportBounds = getSpectrumPlotBounds(exportW, exportH, EXPORT_LABEL_FONT_PX);
+    const peakDb = isAudioActive
+      ? getSpectrumPeakDbInRange(
+          octaveSmoothedRef.current,
+          peakHoldRef.current,
+          prefs.showPeakHold,
+          prefs,
+          sampleRate,
+          fftSize,
+          numBins,
+          exportBounds.plotW
+        )
+      : null;
+    const exportPrefs = {
+      ...prefs,
+      maxDb: computePaddedExportMaxDb(peakDb, prefs.minDb, prefs.maxDb),
+    };
+
+    const exportCanvas = createHighResExportCanvas(
+      size.width,
+      size.height,
+      `Spectrum Analyzer • ${formatFrequency(prefs.minFreq)} – ${formatFrequency(prefs.maxFreq)}`,
+      (ctx, width, height, dpr) => {
+        renderSpectrumCanvas(ctx, {
+          width,
+          height,
+          dpr,
+          prefs: exportPrefs,
+          sampleRate,
+          fftSize,
+          numBins,
+          isAudioActive,
+          displayData: octaveSmoothedRef.current,
+          peakHoldData: peakHoldRef.current,
+          cursor: scaleSpectrumCursor(
+            cursorRef.current,
+            size.width,
+            size.height,
+            width,
+            height,
+            EXPORT_LABEL_FONT_PX
+          ),
+          labelFontPx: EXPORT_LABEL_FONT_PX,
+        });
+      },
+      exportBounds.padLeft,
+      exportBounds.padRight
+    );
+    exportCanvasToPNG(exportCanvas, 'spectral_analyzer');
   };
 
   const handleExportCSV = () => {
@@ -329,74 +521,74 @@ export const SpectrumAnalyzerView: React.FC = () => {
 
   return (
     <div className="viz-view">
-      <div className="canvas-stage" ref={containerRef}>
-        <canvas
-          ref={canvasRef}
-          className="viz-canvas"
-          onWheel={handleWheel}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={() => {
-            cursorRef.current = null;
-            setCursorReadout(null);
-            handleMouseUp();
-          }}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-          onTouchCancel={handleTouchEnd}
-        />
+      <div className="viz-stage-col">
+        <div className="canvas-stage" ref={containerRef}>
+          <canvas
+            ref={canvasRef}
+            className="viz-canvas"
+            onWheel={handleWheel}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={() => {
+              dragRef.current = null;
+            }}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            onTouchCancel={handleTouchEnd}
+          />
 
-        <div className="canvas-hud-top-left">
-          {isPaused && (
-            <div
-              className="hud-pill"
-              style={{
-                color: '#fda4af',
-                borderColor: 'rgba(244, 63, 94, 0.5)',
-              }}
-            >
-              <strong>PAUSED</strong>
-            </div>
-          )}
-          <div className="hud-pill">
-            <span>Range</span>
-            <strong>
-              {formatFrequency(prefs.minFreq)} – {formatFrequency(prefs.maxFreq)}
-            </strong>
-          </div>
-          <div className="hud-pill">
-            <span>Octave</span>
-            <strong>{octLabel}</strong>
-          </div>
-          {cursorReadout && (
+          <div className="canvas-hud-top-left">
+            {isPaused && (
+              <div
+                className="hud-pill"
+                style={{
+                  color: '#fda4af',
+                  borderColor: 'rgba(244, 63, 94, 0.5)',
+                }}
+              >
+                <strong>PAUSED</strong>
+              </div>
+            )}
             <div className="hud-pill">
-              <strong ref={hudFreqRef}>{formatFrequency(cursorReadout.freq)}</strong>
-              <span ref={hudNoteRef}>({cursorReadout.note})</span>
-              <strong ref={hudDbRef}>{cursorReadout.db.toFixed(1)} dB</strong>
+              <span>Range</span>
+              <strong>
+                {formatFrequency(prefs.minFreq)} – {formatFrequency(prefs.maxFreq)}
+              </strong>
             </div>
+            <div className="hud-pill">
+              <span>Octave</span>
+              <strong>{octLabel}</strong>
+            </div>
+            {cursorReadout && (
+              <div className="hud-pill">
+                <strong ref={hudFreqRef}>{formatFrequency(cursorReadout.freq)}</strong>
+                <span ref={hudNoteRef}>({cursorReadout.note})</span>
+                <strong ref={hudDbRef}>{cursorReadout.db.toFixed(1)} dB</strong>
+              </div>
+            )}
+          </div>
+
+          {!isAudioActive && (
+            <EmptyAudioOverlay
+              title="Spectrum Analyzer"
+              description="Enable the microphone to begin. Drag with one finger to inspect frequencies, or use two fingers to scroll and pinch-zoom."
+              onStartMic={() => void startMicrophone()}
+            />
           )}
         </div>
 
-        {!isAudioActive && (
-          <EmptyAudioOverlay
-            title="Spectrum Analyzer"
-            description="Enable the microphone to begin. Drag with one finger to inspect frequencies, or use two fingers to scroll and pinch-zoom."
-            onStartMic={() => void startMicrophone()}
-          />
-        )}
+        <FreqAxisZoomBar
+          minFreq={prefs.minFreq}
+          maxFreq={prefs.maxFreq}
+          nyquist={nyquist}
+          freqScale={prefs.freqScale}
+          padLeft={getSpectrumPlotBounds(size.width, size.height).padLeft}
+          padRight={getSpectrumPlotBounds(size.width, size.height).padRight}
+          onRangeChange={(minFreq, maxFreq) => updateAnalyzerPrefs({ minFreq, maxFreq })}
+        />
       </div>
-
-      <FreqAxisZoomBar
-        minFreq={prefs.minFreq}
-        maxFreq={prefs.maxFreq}
-        nyquist={nyquist}
-        freqScale={prefs.freqScale}
-        padLeft={SPECTRUM_PLOT_PADDING.left}
-        padRight={SPECTRUM_PLOT_PADDING.right}
-        onRangeChange={(minFreq, maxFreq) => updateAnalyzerPrefs({ minFreq, maxFreq })}
-      />
 
       <MobileControlsBar
         summaryText={`${octLabel} • ${prefs.timeSmoothingMs}ms • ${prefs.freqScale.toUpperCase()}`}

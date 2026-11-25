@@ -2,10 +2,24 @@ import React, { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AudioEngine } from '../audio/AudioEngine';
+import { SpectrographBuffer } from '../audio/SpectrographBuffer';
 import { AnalyzerControls } from '../components/analyzer/AnalyzerControls';
 import { SpectrumAnalyzerView } from '../components/analyzer/SpectrumAnalyzerView';
+import {
+  getSpectrumPeakDbInRange,
+  getSpectrumPlotBounds,
+  renderSpectrumCanvas,
+  scaleSpectrumCursor,
+} from '../components/analyzer/spectrumRenderer';
 import { FrequencyZoomControls } from '../components/controls/FrequencyZoomControls';
+import { FreqAxisZoomBar } from '../components/controls/FreqAxisZoomBar';
+import { MobileControlsBar } from '../components/controls/MobileControlsBar';
 import { SpectrographControls } from '../components/spectrograph/SpectrographControls';
+import { SpectrographView } from '../components/spectrograph/SpectrographView';
+import {
+  getSpectrographPeakDbInRange,
+  renderSpectrographCanvas,
+} from '../components/spectrograph/spectrographRenderer';
 import { ToneGeneratorCard } from '../components/tuner/ToneGeneratorCard';
 import { MusicalTunerView } from '../components/tuner/MusicalTunerView';
 import { AudioProvider, useAudio } from '../contexts/AudioContext';
@@ -16,6 +30,15 @@ import {
   savePreferences,
 } from '../hooks/usePreferences';
 import { DEFAULT_PREFERENCES } from '../types/preferences';
+import {
+  EXPORT_HEADER_HEIGHT,
+  EXPORT_LABEL_FONT_PX,
+  MIN_PNG_EXPORT_WIDTH,
+  computePaddedExportMaxDb,
+  createHighResExportCanvas,
+  formatExportTimestamp,
+  getPngExportDimensions,
+} from '../utils/exporters';
 import {
   TONE_MAX_FREQ_HZ,
   TONE_MIN_FREQ_HZ,
@@ -467,5 +490,690 @@ describe('Tuner Defaults, Tone Frequency Slider & Focus-Loss Behavior', () => {
 
     const groupButtons = Array.from(clearBtn!.parentElement!.querySelectorAll('button'));
     expect(groupButtons.indexOf(clearBtn!)).toBeLessThan(groupButtons.indexOf(pauseBtn!));
+  });
+
+  it('places the Clear button to the left of the Pause button in MobileControlsBar when onClear is provided', () => {
+    const onClear = vi.fn();
+    render(
+      <MobileControlsBar
+        summaryText="30s • magma • LOG"
+        isPaused={false}
+        canPause={true}
+        controlsOpen={false}
+        pauseLabel="Pause Spectrograph"
+        resumeLabel="Resume Spectrograph"
+        toggleControlsLabel="Toggle Spectrograph Controls"
+        clearLabel="Clear Spectrograph History"
+        onTogglePause={() => {}}
+        onToggleControls={() => {}}
+        onClear={onClear}
+      />
+    );
+
+    const clearBtn = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Clear')
+    );
+    const pauseBtn = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Pause')
+    );
+    expect(clearBtn).not.toBeUndefined();
+    expect(pauseBtn).not.toBeUndefined();
+    expect(clearBtn!.parentElement).toBe(pauseBtn!.parentElement);
+
+    const barButtons = Array.from(clearBtn!.parentElement!.querySelectorAll('button'));
+    expect(barButtons.indexOf(clearBtn!)).toBeLessThan(barButtons.indexOf(pauseBtn!));
+
+    act(() => {
+      clearBtn!.click();
+    });
+    expect(onClear).toHaveBeenCalledTimes(1);
+  });
+
+  it('exports PNG canvases at least 1500px wide with a timestamp at the top', () => {
+    const mobileDims = getPngExportDimensions(390, 580, 2);
+    expect(mobileDims.width * mobileDims.dpr).toBeGreaterThanOrEqual(MIN_PNG_EXPORT_WIDTH);
+
+    const smallDesktopDims = getPngExportDimensions(1200, 600, 1);
+    expect(smallDesktopDims.width * smallDesktopDims.dpr).toBeGreaterThanOrEqual(
+      MIN_PNG_EXPORT_WIDTH
+    );
+
+    const retinaDesktopDims = getPngExportDimensions(1440, 720, 2);
+    expect(retinaDesktopDims.width * retinaDesktopDims.dpr).toBe(2880);
+
+    const fillTextSpy = vi.fn();
+    const translateSpy = vi.fn();
+    const mockCtx = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      scale: vi.fn(),
+      translate: translateSpy,
+      fillRect: vi.fn(),
+      fillText: fillTextSpy,
+      fillStyle: '',
+      font: '',
+      textAlign: 'left',
+      textBaseline: 'alphabetic',
+    } as unknown as CanvasRenderingContext2D;
+
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(mockCtx);
+
+    const fixedDate = new Date(2026, 10, 25, 10, 54, 6);
+    const expectedTimestamp = formatExportTimestamp(fixedDate);
+    expect(expectedTimestamp).toBe('2026-11-25 10:54:06');
+
+    const renderChartSpy = vi.fn();
+    const exportCanvas = createHighResExportCanvas(
+      390,
+      580,
+      'Spectrum Analyzer • 20.0 Hz – 20.00 kHz',
+      renderChartSpy,
+      46,
+      22,
+      fixedDate
+    );
+
+    expect(exportCanvas.width).toBeGreaterThanOrEqual(1500);
+    expect(fillTextSpy).toHaveBeenCalledWith(
+      'Spectrum Analyzer • 20.0 Hz – 20.00 kHz',
+      46,
+      expect.any(Number)
+    );
+    expect(fillTextSpy).toHaveBeenCalledWith(
+      '2026-11-25 10:54:06',
+      expect.any(Number),
+      expect.any(Number)
+    );
+    const timestampCall = fillTextSpy.mock.calls.find((c) => c[0] === '2026-11-25 10:54:06');
+    expect(timestampCall?.[2]).toBeLessThan(EXPORT_HEADER_HEIGHT);
+    expect(translateSpy).toHaveBeenCalledWith(0, EXPORT_HEADER_HEIGHT);
+    expect(renderChartSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('scales active Spectrum Analyzer cursor reticle and renders active Spectrograph target in PNG exports', () => {
+    expect(scaleSpectrumCursor(null, 390, 580, 1500, 1125)).toBeNull();
+    expect(scaleSpectrumCursor({ x: 5, y: 5 }, 390, 580, 1500, 1125)).toBeNull();
+
+    const srcBounds = getSpectrumPlotBounds(390, 580);
+    const dstBounds = getSpectrumPlotBounds(1500, 1125);
+    const centerCursor = {
+      x: srcBounds.padLeft + srcBounds.plotW * 0.5,
+      y: srcBounds.padTop + srcBounds.plotH * 0.25,
+    };
+    const scaled = scaleSpectrumCursor(centerCursor, 390, 580, 1500, 1125);
+    expect(scaled).not.toBeNull();
+    expect(scaled!.x).toBeCloseTo(dstBounds.padLeft + dstBounds.plotW * 0.5, 4);
+    expect(scaled!.y).toBeCloseTo(dstBounds.padTop + dstBounds.plotH * 0.25, 4);
+
+    // Spectrograph canvas renders reticle/badges when target is active
+    const arcSpy = vi.fn();
+    const fillTextSpy = vi.fn();
+    const mockCtx = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      scale: vi.fn(),
+      fillRect: vi.fn(),
+      strokeRect: vi.fn(),
+      beginPath: vi.fn(),
+      closePath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
+      fill: vi.fn(),
+      arc: arcSpy,
+      roundRect: vi.fn(),
+      setLineDash: vi.fn(),
+      fillText: fillTextSpy,
+      measureText: vi.fn(() => ({ width: 32 })),
+      drawImage: vi.fn(),
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 1,
+      font: '',
+      textAlign: 'left',
+      textBaseline: 'alphabetic',
+    } as unknown as CanvasRenderingContext2D;
+
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+    const buffer = new SpectrographBuffer(60, 64, 48000, 60);
+    renderSpectrographCanvas(
+      mockCtx,
+      { current: null },
+      { current: null },
+      {
+        width: 1500,
+        height: 750,
+        dpr: 1,
+        prefs: DEFAULT_PREFERENCES.spectrograph,
+        buffer,
+        sampleRate: 48000,
+        fftSize: 128,
+        effectiveScrollBack: 0,
+        frameCount: 0,
+        earliestMs: 0,
+        latestMs: 0,
+        target: {
+          freq: 440,
+          note: 'A4',
+          timeOffsetSec: -5.2,
+          db: -32,
+        },
+      }
+    );
+
+    expect(arcSpy).toHaveBeenCalled();
+    expect(fillTextSpy).toHaveBeenCalledWith('440 Hz', expect.any(Number), expect.any(Number));
+    expect(fillTextSpy).toHaveBeenCalledWith('-5.2s', expect.any(Number), expect.any(Number));
+  });
+
+  it('toggles, moves, and preserves the reticle on SpectrumAnalyzerView across mouseleave and PNG export', () => {
+    class MockResizeObserver {
+      observe() {}
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', MockResizeObserver);
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,AAA');
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    render(
+      <PreferencesProvider>
+        <AudioProvider>
+          <SpectrumAnalyzerView />
+        </AudioProvider>
+      </PreferencesProvider>
+    );
+
+    const canvas = container.querySelector('canvas.viz-canvas') as HTMLCanvasElement;
+    expect(canvas).not.toBeNull();
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      top: 0,
+      right: 800,
+      bottom: 420,
+      width: 800,
+      height: 420,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+
+    const tap = (clientX: number, clientY: number) => {
+      const startEvt = new Event('touchstart', { bubbles: true, cancelable: true });
+      Object.defineProperty(startEvt, 'touches', { value: [{ clientX, clientY }] });
+      const endEvt = new Event('touchend', { bubbles: true, cancelable: true });
+      Object.defineProperty(endEvt, 'touches', { value: [] });
+      act(() => {
+        canvas.dispatchEvent(startEvt);
+        canvas.dispatchEvent(endEvt);
+      });
+    };
+
+    const getHudFreq = () => {
+      const pills = Array.from(container.querySelectorAll('.hud-pill'));
+      const targetPill = pills.find((p) => p.textContent?.includes('dB'));
+      return targetPill?.querySelector('strong')?.textContent ?? null;
+    };
+
+    // Initially no reticle
+    expect(getHudFreq()).toBeNull();
+
+    // 1. First tap adds reticle
+    tap(200, 150);
+    const firstFreq = getHudFreq();
+    expect(firstFreq).not.toBeNull();
+
+    // 2. Mouseleave + clicking PNG button keeps the reticle active
+    act(() => {
+      canvas.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
+    });
+    expect(getHudFreq()).toBe(firstFreq);
+
+    const pngBtn = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('PNG')
+    );
+    expect(pngBtn).not.toBeUndefined();
+    act(() => {
+      pngBtn!.click();
+    });
+    expect(getHudFreq()).toBe(firstFreq);
+
+    // 3. Tapping elsewhere moves reticle immediately
+    tap(550, 200);
+    const secondFreq = getHudFreq();
+    expect(secondFreq).not.toBeNull();
+    expect(secondFreq).not.toBe(firstFreq);
+
+    // 4. Tapping on the same vertical y-axis line (same x, different y) removes it
+    tap(550, 100);
+    expect(getHudFreq()).toBeNull();
+
+    vi.unstubAllGlobals();
+  });
+
+  it('toggles, moves, and preserves the target on SpectrographView across mouseleave and PNG export', () => {
+    class MockResizeObserver {
+      observe() {}
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', MockResizeObserver);
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,AAA');
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    render(
+      <PreferencesProvider>
+        <AudioProvider>
+          <SpectrographView />
+        </AudioProvider>
+      </PreferencesProvider>
+    );
+
+    const canvas = container.querySelector('canvas.viz-canvas') as HTMLCanvasElement;
+    expect(canvas).not.toBeNull();
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      top: 0,
+      right: 800,
+      bottom: 420,
+      width: 800,
+      height: 420,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+
+    const getTargetPill = () =>
+      Array.from(container.querySelectorAll('.hud-pill')).find(
+        (p) =>
+          !p.textContent?.includes('Window') &&
+          !p.textContent?.includes('Range') &&
+          p.textContent?.includes('(')
+      ) ?? null;
+
+    // 1. Mouse click adds target (must advance past touch guard if any)
+    act(() => {
+      canvas.dispatchEvent(
+        new MouseEvent('mousedown', { bubbles: true, clientX: 250, clientY: 160 })
+      );
+      canvas.dispatchEvent(
+        new MouseEvent('mouseup', { bubbles: true, clientX: 250, clientY: 160 })
+      );
+    });
+    const firstText = getTargetPill()?.textContent;
+    expect(firstText).toBeTruthy();
+
+    // 2. Mouseleave + clicking PNG preserves target
+    act(() => {
+      canvas.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
+    });
+    expect(getTargetPill()?.textContent).toBe(firstText);
+
+    const pngBtn = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('PNG')
+    );
+    act(() => {
+      pngBtn!.click();
+    });
+    expect(getTargetPill()?.textContent).toBe(firstText);
+
+    // 3. Clicking elsewhere moves target immediately
+    act(() => {
+      canvas.dispatchEvent(
+        new MouseEvent('mousedown', { bubbles: true, clientX: 520, clientY: 220 })
+      );
+      canvas.dispatchEvent(
+        new MouseEvent('mouseup', { bubbles: true, clientX: 520, clientY: 220 })
+      );
+    });
+    const secondText = getTargetPill()?.textContent;
+    expect(secondText).toBeTruthy();
+    expect(secondText).not.toBe(firstText);
+
+    // 4. Clicking same point/y-axis line removes target
+    act(() => {
+      canvas.dispatchEvent(
+        new MouseEvent('mousedown', { bubbles: true, clientX: 520, clientY: 220 })
+      );
+      canvas.dispatchEvent(
+        new MouseEvent('mouseup', { bubbles: true, clientX: 520, clientY: 220 })
+      );
+    });
+    expect(getTargetPill()).toBeNull();
+
+    vi.unstubAllGlobals();
+  });
+
+  it('zooms export maxDb to +10dB padded ceiling (e.g. -54dB peak -> -40dB) and uses larger label font', () => {
+    expect(computePaddedExportMaxDb(-54, -100, 0)).toBe(-40);
+    expect(computePaddedExportMaxDb(-5, -100, 0)).toBe(0);
+    expect(computePaddedExportMaxDb(-105, -100, 0)).toBe(-90);
+    expect(computePaddedExportMaxDb(null, -100, 0)).toBe(0);
+
+    // Spectrum peak detection in range
+    const displayData = new Float32Array(256).fill(-90);
+    const peakData = new Float32Array(256).fill(-90);
+    displayData[20] = -54;
+    peakData[20] = -54;
+    const specPeak = getSpectrumPeakDbInRange(
+      displayData,
+      peakData,
+      true,
+      DEFAULT_PREFERENCES.analyzer,
+      48000,
+      512,
+      256,
+      1400
+    );
+    expect(specPeak).not.toBeNull();
+    expect(specPeak!).toBeGreaterThan(-56);
+    expect(specPeak!).toBeLessThanOrEqual(-54);
+    expect(computePaddedExportMaxDb(specPeak, -100, 0)).toBe(-40);
+
+    // Spectrograph peak detection in range
+    const buffer = new SpectrographBuffer(60, 256, 48000, 60);
+    const frame = new Float32Array(256).fill(-88);
+    frame[15] = -54;
+    buffer.pushFrame(frame, 1000, true);
+    const spectroPeak = getSpectrographPeakDbInRange(
+      buffer,
+      DEFAULT_PREFERENCES.spectrograph,
+      48000,
+      512,
+      0,
+      1,
+      1000
+    );
+    expect(spectroPeak).toBeCloseTo(-54, 1);
+    expect(computePaddedExportMaxDb(spectroPeak, -95, -5)).toBe(-40);
+
+    // Verify larger font size is applied in renderSpectrumCanvas when labelFontPx = EXPORT_LABEL_FONT_PX
+    const fontsUsed: string[] = [];
+    const mockCtx = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      scale: vi.fn(),
+      fillRect: vi.fn(),
+      strokeRect: vi.fn(),
+      beginPath: vi.fn(),
+      closePath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
+      fill: vi.fn(),
+      arc: vi.fn(),
+      roundRect: vi.fn(),
+      clip: vi.fn(),
+      rect: vi.fn(),
+      setLineDash: vi.fn(),
+      fillText: vi.fn(),
+      measureText: vi.fn(() => ({ width: 32 })),
+      createLinearGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 1,
+      textAlign: 'left',
+      textBaseline: 'alphabetic',
+      set font(val: string) {
+        fontsUsed.push(val);
+      },
+    } as unknown as CanvasRenderingContext2D;
+
+    renderSpectrumCanvas(mockCtx, {
+      width: 1500,
+      height: 750,
+      dpr: 1,
+      prefs: { ...DEFAULT_PREFERENCES.analyzer, maxDb: -40 },
+      sampleRate: 48000,
+      fftSize: 512,
+      numBins: 256,
+      isAudioActive: true,
+      displayData,
+      peakHoldData: peakData,
+      cursor: { x: 400, y: 200 },
+      labelFontPx: EXPORT_LABEL_FONT_PX,
+    });
+
+    expect(fontsUsed).toContain(`${EXPORT_LABEL_FONT_PX}px JetBrains Mono, monospace`);
+    expect(fontsUsed).toContain(`bold ${EXPORT_LABEL_FONT_PX}px JetBrains Mono, monospace`);
+  });
+
+  it('supports desktop mouse click-and-drag to move the reticle on SpectrumAnalyzerView and SpectrographView', () => {
+    class MockResizeObserver {
+      observe() {}
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', MockResizeObserver);
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+
+    // 1. SpectrumAnalyzerView desktop click-and-drag
+    render(
+      <PreferencesProvider>
+        <AudioProvider>
+          <SpectrumAnalyzerView />
+        </AudioProvider>
+      </PreferencesProvider>
+    );
+
+    const specCanvas = container.querySelector('canvas.viz-canvas') as HTMLCanvasElement;
+    vi.spyOn(specCanvas, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      top: 0,
+      right: 800,
+      bottom: 420,
+      width: 800,
+      height: 420,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+
+    const getSpecFreq = () => {
+      const pill = Array.from(container.querySelectorAll('.hud-pill')).find((p) =>
+        p.textContent?.includes('dB')
+      );
+      return pill?.querySelector('strong')?.textContent ?? null;
+    };
+
+    // Click and drag from 200 -> 450 moves reticle immediately
+    act(() => {
+      specCanvas.dispatchEvent(
+        new MouseEvent('mousedown', { bubbles: true, clientX: 200, clientY: 160 })
+      );
+    });
+    const at200 = getSpecFreq();
+    expect(at200).not.toBeNull();
+
+    act(() => {
+      specCanvas.dispatchEvent(
+        new MouseEvent('mousemove', { bubbles: true, clientX: 450, clientY: 160 })
+      );
+      specCanvas.dispatchEvent(
+        new MouseEvent('mouseup', { bubbles: true, clientX: 450, clientY: 160 })
+      );
+    });
+    const at450 = getSpecFreq();
+    expect(at450).not.toBeNull();
+    expect(at450).not.toBe(at200);
+
+    // Clicking on the active reticle and dragging moves it again instead of removing it
+    act(() => {
+      specCanvas.dispatchEvent(
+        new MouseEvent('mousedown', { bubbles: true, clientX: 450, clientY: 160 })
+      );
+      specCanvas.dispatchEvent(
+        new MouseEvent('mousemove', { bubbles: true, clientX: 620, clientY: 160 })
+      );
+      specCanvas.dispatchEvent(
+        new MouseEvent('mouseup', { bubbles: true, clientX: 620, clientY: 160 })
+      );
+    });
+    const at620 = getSpecFreq();
+    expect(at620).not.toBeNull();
+    expect(at620).not.toBe(at450);
+
+    // 2. SpectrographView desktop click-and-drag on active target moves it
+    render(
+      <PreferencesProvider>
+        <AudioProvider>
+          <SpectrographView />
+        </AudioProvider>
+      </PreferencesProvider>
+    );
+
+    const spectroCanvas = container.querySelector('canvas.viz-canvas') as HTMLCanvasElement;
+    vi.spyOn(spectroCanvas, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      top: 0,
+      right: 800,
+      bottom: 420,
+      width: 800,
+      height: 420,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+
+    const getSpectroPill = () =>
+      Array.from(container.querySelectorAll('.hud-pill')).find(
+        (p) =>
+          !p.textContent?.includes('Window') &&
+          !p.textContent?.includes('Range') &&
+          p.textContent?.includes('(')
+      )?.textContent ?? null;
+
+    // Place target
+    act(() => {
+      spectroCanvas.dispatchEvent(
+        new MouseEvent('mousedown', { bubbles: true, clientX: 240, clientY: 180 })
+      );
+      spectroCanvas.dispatchEvent(
+        new MouseEvent('mouseup', { bubbles: true, clientX: 240, clientY: 180 })
+      );
+    });
+    const spectroFirst = getSpectroPill();
+    expect(spectroFirst).not.toBeNull();
+
+    // Grab target and drag to new point
+    act(() => {
+      spectroCanvas.dispatchEvent(
+        new MouseEvent('mousedown', { bubbles: true, clientX: 240, clientY: 180 })
+      );
+      spectroCanvas.dispatchEvent(
+        new MouseEvent('mousemove', { bubbles: true, clientX: 520, clientY: 120 })
+      );
+      spectroCanvas.dispatchEvent(
+        new MouseEvent('mouseup', { bubbles: true, clientX: 520, clientY: 120 })
+      );
+    });
+    const spectroDragged = getSpectroPill();
+    expect(spectroDragged).not.toBeNull();
+    expect(spectroDragged).not.toBe(spectroFirst);
+
+    vi.unstubAllGlobals();
+  });
+
+  it('renders FreqAxisZoomBar without ticks, supports wheel zoom on log/linear scale, and provides an icon-only reset button on the right', () => {
+    const onRangeChange = vi.fn();
+
+    render(
+      <FreqAxisZoomBar
+        minFreq={1000}
+        maxFreq={1500}
+        nyquist={20000}
+        freqScale="linear"
+        onRangeChange={onRangeChange}
+      />
+    );
+
+    const bar = container.querySelector('.freq-axis-zoom-bar') as HTMLElement;
+    const track = container.querySelector('.freq-axis-zoom-track') as HTMLElement;
+    const zoomWindow = container.querySelector('.freq-axis-zoom-window') as HTMLElement;
+    const resetBtn = container.querySelector('button.freq-axis-reset-btn') as HTMLButtonElement;
+
+    expect(bar).not.toBeNull();
+    expect(track).not.toBeNull();
+    expect(zoomWindow.querySelectorAll('.freq-axis-tick')).toHaveLength(0);
+    expect(resetBtn).not.toBeNull();
+    expect(resetBtn.textContent).toBe('');
+    expect(resetBtn.disabled).toBe(false);
+
+    // Reset button sits to the right of the track
+    const barChildren = Array.from(bar.children);
+    expect(barChildren.indexOf(resetBtn)).toBeGreaterThan(barChildren.indexOf(track));
+
+    // Wheel zoom shrinks range smoothly even in linear mode with narrow span
+    vi.spyOn(track, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      top: 0,
+      right: 700,
+      bottom: 14,
+      width: 700,
+      height: 14,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    act(() => {
+      bar.dispatchEvent(
+        new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -100, clientX: 400 })
+      );
+    });
+    expect(onRangeChange).toHaveBeenCalledTimes(1);
+    const [zoomInLo, zoomInHi] = onRangeChange.mock.calls[0];
+    expect(zoomInHi - zoomInLo).toBeLessThan(500);
+
+    // Clicking reset restores full [20, 20000]
+    act(() => {
+      resetBtn.click();
+    });
+    expect(onRangeChange).toHaveBeenLastCalledWith(20, 20000);
+
+    // Pointer drag on min handle works for both mouse and touch
+    const minHandle = container.querySelector(
+      '[aria-label="Minimum Frequency Grab Handle"]'
+    ) as HTMLElement;
+    expect(minHandle).not.toBeNull();
+    act(() => {
+      const down = new Event('pointerdown', { bubbles: true, cancelable: true });
+      Object.defineProperty(down, 'clientX', { value: 200 });
+      minHandle.dispatchEvent(down);
+    });
+    act(() => {
+      const move = new Event('pointermove', { bubbles: true, cancelable: true });
+      Object.defineProperty(move, 'clientX', { value: 100 });
+      window.dispatchEvent(move);
+      window.dispatchEvent(new Event('pointerup', { bubbles: true }));
+    });
+    expect(onRangeChange.mock.calls.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('keeps .freq-axis-zoom-bar rendered below the chart even when controls panel starts collapsed', () => {
+    class MockResizeObserver {
+      observe() {}
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', MockResizeObserver);
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+
+    const origWidth = window.innerWidth;
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 });
+
+    render(
+      <PreferencesProvider>
+        <AudioProvider>
+          <SpectrumAnalyzerView />
+        </AudioProvider>
+      </PreferencesProvider>
+    );
+
+    const dock = container.querySelector('.controls-dock');
+    expect(dock?.classList.contains('collapsed')).toBe(true);
+    const bar = container.querySelector('.viz-stage-col .freq-axis-zoom-bar');
+    expect(bar).not.toBeNull();
+    expect(bar?.querySelector('button.freq-axis-reset-btn')).not.toBeNull();
+
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: origWidth });
+    vi.unstubAllGlobals();
   });
 });

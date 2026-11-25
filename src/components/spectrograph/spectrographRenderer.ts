@@ -4,6 +4,7 @@ import { SpectrographPreferences } from '../../types/preferences';
 import { getColormapLUT } from '../../utils/colormaps';
 import {
   formatFreqTick,
+  formatFrequency,
   freqToNorm,
   frequencyToNoteInfo,
   getFrequencyTicks,
@@ -17,13 +18,12 @@ export const SPECTROGRAPH_PLOT_PADDING = {
   bottom: 28, // Time X-axis labels
 } as const;
 
-export function getSpectrographPlotBounds(width: number, height: number) {
-  const {
-    left: padLeft,
-    right: padRight,
-    top: padTop,
-    bottom: padBottom,
-  } = SPECTROGRAPH_PLOT_PADDING;
+export function getSpectrographPlotBounds(width: number, height: number, labelFontPx = 11) {
+  const extra = Math.max(0, labelFontPx - 11);
+  const padLeft = SPECTROGRAPH_PLOT_PADDING.left + extra * 3;
+  const padRight = SPECTROGRAPH_PLOT_PADDING.right + extra * 4;
+  const padTop = SPECTROGRAPH_PLOT_PADDING.top;
+  const padBottom = SPECTROGRAPH_PLOT_PADDING.bottom + extra * 2;
   return {
     padLeft,
     padRight,
@@ -31,6 +31,60 @@ export function getSpectrographPlotBounds(width: number, height: number) {
     padBottom,
     plotW: Math.max(10, Math.floor(width - padLeft - padRight)),
     plotH: Math.max(10, Math.floor(height - padTop - padBottom)),
+  };
+}
+
+export function getSpectrographPeakDbInRange(
+  buffer: SpectrographBuffer,
+  prefs: SpectrographPreferences,
+  sampleRate: number,
+  fftSize: number,
+  effectiveScrollBack: number,
+  frameCount: number,
+  latestMs: number
+): number | null {
+  if (frameCount <= 0) return null;
+  const numBins = buffer.getNumBins();
+  if (numBins <= 1) return null;
+
+  const durationMs = prefs.historyDurationSec * 1000;
+  const viewEndMs = latestMs - effectiveScrollBack * 1000;
+  const viewStartMs = viewEndMs - durationMs;
+  const binWidth = sampleRate / fftSize;
+  const bLo = Math.max(1, Math.min(numBins - 1, Math.floor(prefs.minFreq / binWidth)));
+  const bHi = Math.max(bLo, Math.min(numBins - 1, Math.ceil(prefs.maxFreq / binWidth)));
+
+  let peakDb = -Infinity;
+  for (let i = frameCount - 1; i >= 0; i--) {
+    const ts = buffer.getTimestampAt(i);
+    if (ts < viewStartMs) break;
+    if (ts > viewEndMs) continue;
+    const frame = buffer.getFrameView(i);
+    if (!frame) continue;
+    for (let b = bLo; b <= bHi; b++) {
+      const val = frame[b];
+      if (Number.isFinite(val) && val > peakDb) peakDb = val;
+    }
+  }
+
+  return Number.isFinite(peakDb) && peakDb > -150 ? peakDb : null;
+}
+
+export function getSpectrographTargetPoint(
+  target: SpectrographHoverInfo,
+  width: number,
+  height: number,
+  prefs: SpectrographPreferences,
+  effectiveScrollBack: number,
+  labelFontPx = 11
+): { x: number; y: number } | null {
+  const { padLeft, padTop, plotW, plotH } = getSpectrographPlotBounds(width, height, labelFontPx);
+  const normX = 1 - (-target.timeOffsetSec - effectiveScrollBack) / prefs.historyDurationSec;
+  const normY = freqToNorm(target.freq, prefs.minFreq, prefs.maxFreq, prefs.freqScale);
+  if (normX < 0 || normX > 1 || normY < 0 || normY > 1) return null;
+  return {
+    x: padLeft + normX * plotW,
+    y: padTop + (1 - normY) * plotH,
   };
 }
 
@@ -46,6 +100,8 @@ export interface SpectrographRenderParams {
   frameCount: number;
   earliestMs: number;
   latestMs: number;
+  target?: SpectrographHoverInfo | null;
+  labelFontPx?: number;
 }
 
 export function renderSpectrographCanvas(
@@ -66,9 +122,11 @@ export function renderSpectrographCanvas(
     frameCount,
     earliestMs,
     latestMs,
+    target,
+    labelFontPx = 11,
   } = params;
 
-  const { padLeft, padTop, plotW, plotH } = getSpectrographPlotBounds(w, h);
+  const { padLeft, padTop, plotW, plotH } = getSpectrographPlotBounds(w, h, labelFontPx);
 
   ctx.save();
   ctx.scale(dpr, dpr);
@@ -194,7 +252,7 @@ export function renderSpectrographCanvas(
   // Frequency Axis Ticks (Left Y-axis: minFreq bottom -> maxFreq top)
   const freqTicks = getFrequencyTicks(prefs.minFreq, prefs.maxFreq, prefs.freqScale, plotH);
 
-  ctx.font = '11px JetBrains Mono, monospace';
+  ctx.font = `${labelFontPx}px JetBrains Mono, monospace`;
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
   for (const f of freqTicks) {
@@ -254,6 +312,73 @@ export function renderSpectrographCanvas(
   // Plot Border
   ctx.strokeStyle = 'rgba(148, 163, 184, 0.25)';
   ctx.strokeRect(padLeft, padTop, plotW, plotH);
+
+  // Target reticle & axis badges
+  if (target) {
+    const pt = getSpectrographTargetPoint(target, w, h, prefs, effectiveScrollBack, labelFontPx);
+    if (pt) {
+      const { x: tx, y: ty } = pt;
+
+      ctx.strokeStyle = 'rgba(248, 250, 252, 0.5)';
+      ctx.setLineDash([4, 4]);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(tx, padTop);
+      ctx.lineTo(tx, padTop + plotH);
+      ctx.moveTo(padLeft, ty);
+      ctx.lineTo(padLeft + plotW, ty);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.beginPath();
+      ctx.arc(tx, ty, 6, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(34, 211, 238, 0.28)';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(tx, ty, 3.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#22d3ee';
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.25;
+      ctx.stroke();
+
+      ctx.font = `bold ${labelFontPx}px JetBrains Mono, monospace`;
+      const badgeH = labelFontPx + 7;
+      const freqText = formatFrequency(target.freq);
+      const freqBadgeW = padLeft - 4;
+      const freqBadgeY = Math.max(padTop, Math.min(padTop + plotH - badgeH, ty - badgeH / 2));
+      ctx.fillStyle = '#0e7490';
+      ctx.strokeStyle = '#22d3ee';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(2, freqBadgeY, freqBadgeW, badgeH, 4);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#f8fafc';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(freqText, padLeft - 6, freqBadgeY + badgeH / 2);
+
+      const timeText =
+        Math.abs(target.timeOffsetSec) < 0.05 ? '0s' : `${target.timeOffsetSec.toFixed(1)}s`;
+      const timeBadgeW = ctx.measureText(timeText).width + 14;
+      const timeBadgeX = Math.max(
+        padLeft,
+        Math.min(padLeft + plotW - timeBadgeW, tx - timeBadgeW / 2)
+      );
+      const timeBadgeY = padTop + plotH + 4;
+      ctx.fillStyle = '#0e7490';
+      ctx.strokeStyle = '#22d3ee';
+      ctx.beginPath();
+      ctx.roundRect(timeBadgeX, timeBadgeY, timeBadgeW, badgeH, 4);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#f8fafc';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(timeText, timeBadgeX + timeBadgeW / 2, timeBadgeY + badgeH / 2);
+    }
+  }
 
   ctx.restore();
 }

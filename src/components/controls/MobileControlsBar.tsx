@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pause, Play, SlidersHorizontal } from 'lucide-react';
+import { Pause, Play, SlidersHorizontal, Trash2 } from 'lucide-react';
 
 interface MobileControlsBarProps {
   summaryText: string;
@@ -9,8 +9,10 @@ interface MobileControlsBarProps {
   pauseLabel: string;
   resumeLabel: string;
   toggleControlsLabel: string;
+  clearLabel?: string;
   onTogglePause: () => void;
   onToggleControls: () => void;
+  onClear?: () => void;
 }
 
 export const MobileControlsBar: React.FC<MobileControlsBarProps> = ({
@@ -21,8 +23,10 @@ export const MobileControlsBar: React.FC<MobileControlsBarProps> = ({
   pauseLabel,
   resumeLabel,
   toggleControlsLabel,
+  clearLabel,
   onTogglePause,
   onToggleControls,
+  onClear,
 }) => (
   <div className="controls-mobile-bar">
     <span
@@ -32,6 +36,18 @@ export const MobileControlsBar: React.FC<MobileControlsBarProps> = ({
       {summaryText}
     </span>
     <div className="mobile-bar-actions">
+      {onClear && (
+        <button
+          type="button"
+          className="btn btn-icon-only-landscape"
+          aria-label={clearLabel ?? 'Clear'}
+          title={clearLabel ?? 'Clear'}
+          onClick={onClear}
+        >
+          <Trash2 size={14} />
+          <span className="mobile-portrait-label">Clear</span>
+        </button>
+      )}
       <button
         type="button"
         className={`btn btn-icon-only-landscape ${isPaused ? 'btn-active-mic' : ''}`}
