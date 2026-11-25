@@ -21,14 +21,18 @@ import {
 } from '../utils/exporters';
 import {
   clampFreqRange,
+  formatFreqTick,
   formatFrequency,
   freqToNorm,
   frequencyToNoteInfo,
+  getFrequencyTicks,
   normToFreq,
+  panFreqRange,
   timeConstantMsToAlpha,
 } from '../utils/music';
 import { dspBridge } from '../wasm/dspBridge';
 import { DbRangeControls } from './DbRangeControls';
+import { FreqAxisZoomBar } from './FreqAxisZoomBar';
 import { FrequencyZoomControls } from './FrequencyZoomControls';
 
 interface SpectrumAnalyzerViewProps {
@@ -36,8 +40,10 @@ interface SpectrumAnalyzerViewProps {
   fftSize: number;
   sampleRate: number;
   isAudioActive: boolean;
+  isPaused: boolean;
   latestBinsRef: React.MutableRefObject<Float32Array>;
   frameTick: number;
+  onTogglePause: () => void;
   onUpdatePrefs: (patch: Partial<SpectrumAnalyzerPreferences>) => void;
   onStartMic: () => void;
   onStartDemo: () => void;
@@ -63,8 +69,10 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
   fftSize,
   sampleRate,
   isAudioActive,
+  isPaused,
   latestBinsRef,
   frameTick,
+  onTogglePause,
   onUpdatePrefs,
   onStartMic,
   onStartDemo,
@@ -73,7 +81,6 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ width: 800, height: 420 });
   const [controlsOpen, setControlsOpen] = useState(true);
-  const [isPaused, setIsPaused] = useState(false);
 
   // DSP buffers
   const timeSmoothedRef = useRef<Float32Array>(new Float32Array(fftSize / 2).fill(-110));
@@ -83,6 +90,9 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
 
   // Cursor / touch zoom & pan state
   const cursorRef = useRef<{ x: number; y: number } | null>(null);
+  const hudFreqRef = useRef<HTMLElement>(null);
+  const hudNoteRef = useRef<HTMLSpanElement>(null);
+  const hudDbRef = useRef<HTMLElement>(null);
   const [cursorReadout, setCursorReadout] = useState<{
     freq: number;
     db: number;
@@ -184,7 +194,7 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
     const w = size.width;
     const h = size.height;
     const padLeft = 46;
-    const padRight = 14;
+    const padRight = 22;
     const padTop = 18;
     const padBottom = 28;
     const plotW = Math.max(10, w - padLeft - padRight);
@@ -225,18 +235,16 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
       ctx.fillText(`${db}`, padLeft - 6, y);
     }
 
-    // Grid lines: Vertical Frequency
-    const freqTicks =
-      prefs.freqScale === 'log'
-        ? [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
-        : Array.from({ length: 9 }, (_, idx) =>
-            prefs.minFreq + ((idx + 1) / 10) * (prefs.maxFreq - prefs.minFreq)
-          );
+    // Grid lines: Vertical Frequency (standard round ticks)
+    const freqTicks = getFrequencyTicks(
+      prefs.minFreq,
+      prefs.maxFreq,
+      prefs.freqScale,
+      plotW
+    );
 
-    ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     for (const f of freqTicks) {
-      if (f < prefs.minFreq || f > prefs.maxFreq) continue;
       const norm = freqToNorm(f, prefs.minFreq, prefs.maxFreq, prefs.freqScale);
       const x = padLeft + norm * plotW;
       ctx.strokeStyle = 'rgba(148, 163, 184, 0.12)';
@@ -246,8 +254,13 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
       ctx.stroke();
 
       ctx.fillStyle = '#64748b';
-      const label = f >= 1000 ? `${(f / 1000).toFixed(f % 1000 === 0 ? 0 : 1)}k` : `${Math.round(f)}`;
-      ctx.fillText(label, x, padTop + plotH + 6);
+      ctx.textAlign =
+        x > padLeft + plotW - 14
+          ? 'right'
+          : x < padLeft + 14
+          ? 'left'
+          : 'center';
+      ctx.fillText(formatFreqTick(f), x, padTop + plotH + 6);
     }
 
     // Clip to plot region for spectrum curves
@@ -283,21 +296,20 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
         prefs.maxFreq,
         prefs.freqScale
       );
-      const bStart = Math.max(1, Math.min(numBins - 1, Math.floor(f0 / binWidth)));
-      const bEnd = Math.max(1, Math.min(numBins - 1, Math.floor(f1 / binWidth)));
+      const bf0 = f0 / binWidth;
+      const bf1 = f1 / binWidth;
+      const bf = fCenter / binWidth;
+      const b0 = Math.max(1, Math.min(numBins - 1, Math.floor(bf)));
+      const b1 = Math.max(1, Math.min(numBins - 1, Math.ceil(bf)));
+      const frac = bf - b0;
+      let rawDb = arr[b0] * (1 - frac) + arr[b1] * frac;
 
-      let rawDb: number;
-      if (bEnd > bStart) {
-        rawDb = -160;
+      if (prefs.octaveSmoothing === 0 && bf1 - bf0 >= 1.0) {
+        const bStart = Math.max(1, Math.min(numBins - 1, Math.floor(bf0)));
+        const bEnd = Math.max(1, Math.min(numBins - 1, Math.ceil(bf1)));
         for (let b = bStart; b <= bEnd; b++) {
           if (arr[b] > rawDb) rawDb = arr[b];
         }
-      } else {
-        const bf = fCenter / binWidth;
-        const b0 = Math.max(1, Math.min(numBins - 1, Math.floor(bf)));
-        const b1 = Math.max(1, Math.min(numBins - 1, Math.ceil(bf)));
-        const frac = bf - b0;
-        rawDb = arr[b0] * (1 - frac) + arr[b1] * frac;
       }
       return rawDb + tiltOffset(fCenter);
     };
@@ -316,6 +328,8 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
       }
       ctx.strokeStyle = 'rgba(245, 158, 11, 0.72)';
       ctx.lineWidth = 1.25;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
       ctx.stroke();
     }
 
@@ -353,28 +367,65 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
 
       ctx.strokeStyle = '#22d3ee';
       ctx.lineWidth = 1.8;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
       ctx.stroke();
     }
 
-    // Cursor Crosshair
+    // Cursor Crosshair — tracks live dB at the targeted frequency
     const cur = cursorRef.current;
-    if (
-      cur &&
+    const cursorInPlot =
+      cur !== null &&
       cur.x >= padLeft &&
       cur.x <= padLeft + plotW &&
       cur.y >= padTop &&
-      cur.y <= padTop + plotH
-    ) {
-      ctx.strokeStyle = 'rgba(248, 250, 252, 0.35)';
+      cur.y <= padTop + plotH;
+
+    let trackedFreq = 0;
+    let trackedDb = 0;
+    let trackedY = 0;
+
+    if (cursorInPlot && cur) {
+      const px = cur.x - padLeft;
+      trackedFreq = normToFreq(px / plotW, prefs.minFreq, prefs.maxFreq, prefs.freqScale);
+      trackedDb =
+        isAudioActive && numBins > 1
+          ? sampleColumnDb(displayData, px)
+          : dbMax - ((cur.y - padTop) / plotH) * dbSpan;
+      trackedY = Math.max(padTop, Math.min(padTop + plotH, mapDbToY(trackedDb)));
+
+      // Crosshair lines intersecting at (cur.x, trackedY)
+      ctx.strokeStyle = 'rgba(248, 250, 252, 0.42)';
       ctx.setLineDash([4, 4]);
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(cur.x, padTop);
       ctx.lineTo(cur.x, padTop + plotH);
-      ctx.moveTo(padLeft, cur.y);
-      ctx.lineTo(padLeft + plotW, cur.y);
+      ctx.moveTo(padLeft, trackedY);
+      ctx.lineTo(padLeft + plotW, trackedY);
       ctx.stroke();
       ctx.setLineDash([]);
+
+      // Target marker dot following the curve at targeted frequency
+      ctx.beginPath();
+      ctx.arc(cur.x, trackedY, 6, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(34, 211, 238, 0.28)';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(cur.x, trackedY, 3.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#22d3ee';
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.25;
+      ctx.stroke();
+
+      const noteInfo = frequencyToNoteInfo(trackedFreq);
+      const noteStr = noteInfo
+        ? `${noteInfo.label} ${noteInfo.cents >= 0 ? '+' : ''}${noteInfo.cents.toFixed(0)}¢`
+        : '—';
+      if (hudFreqRef.current) hudFreqRef.current.textContent = formatFrequency(trackedFreq);
+      if (hudNoteRef.current) hudNoteRef.current.textContent = `(${noteStr})`;
+      if (hudDbRef.current) hudDbRef.current.textContent = `${trackedDb.toFixed(1)} dB`;
     }
 
     ctx.restore(); // unclip
@@ -384,8 +435,54 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
     ctx.lineWidth = 1;
     ctx.strokeRect(padLeft, padTop, plotW, plotH);
 
+    // Highlighted axis badges for targeted dB and frequency
+    if (cursorInPlot && cur) {
+      ctx.font = 'bold 11px JetBrains Mono, monospace';
+
+      // Left Y-axis dB highlight badge
+      const dbText = `${trackedDb.toFixed(1)}`;
+      const dbBadgeW = padLeft - 4;
+      const dbBadgeH = 18;
+      const dbBadgeY = Math.max(
+        padTop,
+        Math.min(padTop + plotH - dbBadgeH, trackedY - dbBadgeH / 2)
+      );
+      ctx.fillStyle = '#0e7490';
+      ctx.strokeStyle = '#22d3ee';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(2, dbBadgeY, dbBadgeW, dbBadgeH, 4);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#f8fafc';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(dbText, padLeft - 6, dbBadgeY + dbBadgeH / 2);
+
+      // Bottom X-axis Frequency highlight badge
+      const freqText = formatFrequency(trackedFreq);
+      const freqTextW = ctx.measureText(freqText).width;
+      const freqBadgeW = freqTextW + 12;
+      const freqBadgeH = 18;
+      const freqBadgeX = Math.max(
+        padLeft,
+        Math.min(padLeft + plotW - freqBadgeW, cur.x - freqBadgeW / 2)
+      );
+      const freqBadgeY = padTop + plotH + 4;
+      ctx.fillStyle = '#0e7490';
+      ctx.strokeStyle = '#22d3ee';
+      ctx.beginPath();
+      ctx.roundRect(freqBadgeX, freqBadgeY, freqBadgeW, freqBadgeH, 4);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#f8fafc';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(freqText, freqBadgeX + freqBadgeW / 2, freqBadgeY + freqBadgeH / 2);
+    }
+
     ctx.restore();
-  }, [frameTick, isAudioActive, isPaused, prefs, sampleRate, fftSize, size, latestBinsRef]);
+  }, [frameTick, isAudioActive, isPaused, prefs, sampleRate, fftSize, size, latestBinsRef, cursorReadout]);
 
   const updateCursorFromClient = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
@@ -396,7 +493,7 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
     cursorRef.current = { x, y };
 
     const padLeft = 46;
-    const padRight = 14;
+    const padRight = 22;
     const padTop = 18;
     const padBottom = 28;
     const plotW = Math.max(10, rect.width - padLeft - padRight);
@@ -410,7 +507,21 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
     const normX = (x - padLeft) / plotW;
     const normY = (y - padTop) / plotH;
     const freq = normToFreq(normX, prefs.minFreq, prefs.maxFreq, prefs.freqScale);
-    const db = prefs.maxDb - normY * Math.max(10, prefs.maxDb - prefs.minDb);
+    let db = prefs.maxDb - normY * Math.max(10, prefs.maxDb - prefs.minDb);
+    if (isAudioActive && octaveSmoothedRef.current.length > 1) {
+      const binWidth = sampleRate / fftSize;
+      const bf = freq / binWidth;
+      const b0 = Math.max(1, Math.min(octaveSmoothedRef.current.length - 1, Math.floor(bf)));
+      const b1 = Math.max(1, Math.min(octaveSmoothedRef.current.length - 1, Math.ceil(bf)));
+      const frac = bf - b0;
+      const tilt = prefs.tiltSlope
+        ? prefs.tiltSlope * Math.log2(Math.max(20, freq) / 1000)
+        : 0;
+      db =
+        octaveSmoothedRef.current[b0] * (1 - frac) +
+        octaveSmoothedRef.current[b1] * frac +
+        tilt;
+    }
     const noteInfo = frequencyToNoteInfo(freq);
     const noteStr = noteInfo
       ? `${noteInfo.label} ${noteInfo.cents >= 0 ? '+' : ''}${noteInfo.cents.toFixed(0)}¢`
@@ -426,7 +537,7 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const padLeft = 46;
-    const plotW = Math.max(10, rect.width - padLeft - 14);
+    const plotW = Math.max(10, rect.width - padLeft - 22);
     const norm = Math.max(0, Math.min(1, (e.clientX - rect.left - padLeft) / plotW));
 
     const zoomFactor = e.deltaY > 0 ? 1.15 : 0.87;
@@ -461,49 +572,24 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
     updateCursorFromClient(e.clientX, e.clientY);
     if (!dragRef.current?.active || !canvasRef.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
-    const plotW = Math.max(10, rect.width - 60);
+    const plotW = Math.max(10, rect.width - 68);
     const dxNorm = (e.clientX - dragRef.current.startX) / plotW;
-
-    if (prefs.freqScale === 'log') {
-      const logMin = Math.log10(Math.max(20, dragRef.current.startMin));
-      const logMax = Math.log10(Math.max(21, dragRef.current.startMax));
-      const span = logMax - logMin;
-      let nextLogMin = logMin - dxNorm * span;
-      let nextLogMax = logMax - dxNorm * span;
-      const absMinLog = Math.log10(20);
-      const absMaxLog = Math.log10(nyquist);
-      if (nextLogMin < absMinLog) {
-        nextLogMin = absMinLog;
-        nextLogMax = absMinLog + span;
-      }
-      if (nextLogMax > absMaxLog) {
-        nextLogMax = absMaxLog;
-        nextLogMin = absMaxLog - span;
-      }
-      const [lo, hi] = clampFreqRange(Math.pow(10, nextLogMin), Math.pow(10, nextLogMax), nyquist);
-      onUpdatePrefs({ minFreq: lo, maxFreq: hi });
-    } else {
-      const span = dragRef.current.startMax - dragRef.current.startMin;
-      let nextMin = dragRef.current.startMin - dxNorm * span;
-      let nextMax = dragRef.current.startMax - dxNorm * span;
-      if (nextMin < 20) {
-        nextMin = 20;
-        nextMax = 20 + span;
-      }
-      if (nextMax > nyquist) {
-        nextMax = nyquist;
-        nextMin = nyquist - span;
-      }
-      const [lo, hi] = clampFreqRange(nextMin, nextMax, nyquist);
-      onUpdatePrefs({ minFreq: lo, maxFreq: hi });
-    }
+    const [lo, hi] = panFreqRange(
+      dragRef.current.startMin,
+      dragRef.current.startMax,
+      -dxNorm,
+      nyquist,
+      prefs.freqScale
+    );
+    onUpdatePrefs({ minFreq: lo, maxFreq: hi });
   };
 
   const handleMouseUp = () => {
     dragRef.current = null;
   };
 
-  // Touch support: single-finger pan & two-finger pinch-to-zoom
+  // Touch support: single-finger scrolls/pans frequency range (no zooming);
+  // two-finger pinch zooms frequency range
   const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
     if (e.touches.length === 1) {
       const t = e.touches[0];
@@ -521,7 +607,7 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
       const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
       const rect = canvasRef.current.getBoundingClientRect();
       const midX = (t1.clientX + t2.clientX) / 2 - rect.left;
-      const plotW = Math.max(10, rect.width - 60);
+      const plotW = Math.max(10, rect.width - 68);
       const norm = Math.max(0, Math.min(1, (midX - 46) / plotW));
       const centerFreq = normToFreq(norm, prefs.minFreq, prefs.maxFreq, prefs.freqScale);
       pinchRef.current = {
@@ -539,27 +625,16 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
       const t = e.touches[0];
       updateCursorFromClient(t.clientX, t.clientY);
       const rect = canvasRef.current.getBoundingClientRect();
-      const plotW = Math.max(10, rect.width - 60);
+      const plotW = Math.max(10, rect.width - 68);
       const dxNorm = (t.clientX - dragRef.current.startX) / plotW;
-      const span = dragRef.current.startMax - dragRef.current.startMin;
-      if (prefs.freqScale === 'log') {
-        const logMin = Math.log10(Math.max(20, dragRef.current.startMin));
-        const logMax = Math.log10(Math.max(21, dragRef.current.startMax));
-        const lSpan = logMax - logMin;
-        const [lo, hi] = clampFreqRange(
-          Math.pow(10, logMin - dxNorm * lSpan),
-          Math.pow(10, logMax - dxNorm * lSpan),
-          nyquist
-        );
-        onUpdatePrefs({ minFreq: lo, maxFreq: hi });
-      } else {
-        const [lo, hi] = clampFreqRange(
-          dragRef.current.startMin - dxNorm * span,
-          dragRef.current.startMax - dxNorm * span,
-          nyquist
-        );
-        onUpdatePrefs({ minFreq: lo, maxFreq: hi });
-      }
+      const [lo, hi] = panFreqRange(
+        dragRef.current.startMin,
+        dragRef.current.startMax,
+        -dxNorm,
+        nyquist,
+        prefs.freqScale
+      );
+      onUpdatePrefs({ minFreq: lo, maxFreq: hi });
     } else if (e.touches.length === 2 && pinchRef.current) {
       const t1 = e.touches[0];
       const t2 = e.touches[1];
@@ -671,9 +746,9 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
           </div>
           {cursorReadout && (
             <div className="hud-pill">
-              <strong>{formatFrequency(cursorReadout.freq)}</strong>
-              <span>({cursorReadout.note})</span>
-              <strong>{cursorReadout.db.toFixed(1)} dB</strong>
+              <strong ref={hudFreqRef}>{formatFrequency(cursorReadout.freq)}</strong>
+              <span ref={hudNoteRef}>({cursorReadout.note})</span>
+              <strong ref={hudDbRef}>{cursorReadout.db.toFixed(1)} dB</strong>
             </div>
           )}
         </div>
@@ -697,6 +772,17 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
         )}
       </div>
 
+      {/* Desktop bottom frequency range overview with Min/Max grab handles & wheel zoom */}
+      <FreqAxisZoomBar
+        minFreq={prefs.minFreq}
+        maxFreq={prefs.maxFreq}
+        nyquist={nyquist}
+        freqScale={prefs.freqScale}
+        padLeft={46}
+        padRight={22}
+        onRangeChange={(minFreq, maxFreq) => onUpdatePrefs({ minFreq, maxFreq })}
+      />
+
       {/* Mobile Portrait/Landscape Toggle Rail */}
       <div className="controls-mobile-bar">
         <span
@@ -712,7 +798,7 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
             disabled={!isAudioActive}
             aria-label={isPaused ? 'Resume Spectrum Analyzer' : 'Pause Spectrum Analyzer'}
             title={isPaused ? 'Resume' : 'Pause'}
-            onClick={() => setIsPaused((p) => !p)}
+            onClick={onTogglePause}
           >
             {isPaused ? <Play size={14} /> : <Pause size={14} />}
             <span className="mobile-portrait-label">
@@ -800,7 +886,8 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
             type="button"
             className={`btn desktop-only-btn ${isPaused ? 'btn-active-mic' : ''}`}
             disabled={!isAudioActive}
-            onClick={() => setIsPaused((p) => !p)}
+            title="Pause / Resume (Space)"
+            onClick={onTogglePause}
           >
             {isPaused ? <Play size={13} /> : <Pause size={13} />}
             <span>{isPaused ? 'Resume' : 'Pause'}</span>

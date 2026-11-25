@@ -18,7 +18,12 @@ import {
   loadPreferences,
   savePreferences,
 } from '../hooks/usePreferences';
-import { frequencyToNoteInfo, timeConstantMsToAlpha } from '../utils/music';
+import {
+  formatFreqTick,
+  frequencyToNoteInfo,
+  getFrequencyTicks,
+  timeConstantMsToAlpha,
+} from '../utils/music';
 
 function generateSine(freqHz: number, sampleRate: number, length: number): Float32Array {
   const out = new Float32Array(length);
@@ -283,6 +288,23 @@ describe('Spectral WASM DSP & Core Modules', () => {
       expect(restored.analyzer.freqScale).toBe('linear');
       expect(restored.spectrograph.historyDurationSec).toBe(60);
       expect(restored.tuner.referenceA4).toBe(442);
+    });
+  });
+
+  describe('Standard Frequency Axis Ticks', () => {
+    it('includes 1k, 2k, and 20k on log scale even on mobile widths and uses clean round ticks on linear scale', () => {
+      const logMobile = getFrequencyTicks(20, 20000, 'log', 280);
+      expect(logMobile).toContain(1000);
+      expect(logMobile).toContain(2000);
+      expect(logMobile).toContain(20000);
+
+      const linearDesktop = getFrequencyTicks(20, 24000, 'linear', 800);
+      expect(linearDesktop).toContain(20000);
+      for (const t of linearDesktop) {
+        expect(t % 1000).toBe(0);
+        const label = formatFreqTick(t);
+        expect(label.includes('.')).toBe(false);
+      }
     });
   });
 });

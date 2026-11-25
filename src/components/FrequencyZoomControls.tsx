@@ -46,6 +46,23 @@ export const FrequencyZoomControls: React.FC<FrequencyZoomControlsProps> = ({
     onRangeChange(sliderToHz(minSliderVal), sliderToHz(snapped));
   };
 
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / Math.max(20, rect.width)));
+    const span = maxSliderVal - minSliderVal;
+    const stepDelta = Math.max(100, Math.round((span * 0.14) / 100) * 100);
+    const dir = e.deltaY > 0 ? 1 : -1; // >0 zooms out, <0 zooms in
+    const nextMin = Math.max(0, minSliderVal - dir * Math.round((stepDelta * ratio) / 100) * 100);
+    const nextMax = Math.min(
+      maxSliderHz,
+      maxSliderVal + dir * Math.round((stepDelta * (1 - ratio)) / 100) * 100
+    );
+    if (nextMax - nextMin >= 100) {
+      onRangeChange(sliderToHz(nextMin), sliderToHz(nextMax));
+    }
+  };
+
   return (
     <>
       <div className="control-group">
@@ -70,7 +87,11 @@ export const FrequencyZoomControls: React.FC<FrequencyZoomControlsProps> = ({
 
       <div className="control-group freq-zoom-group">
         <span className="control-label">Freq Range</span>
-        <div className="dual-range-wrap" aria-label="Frequency Zoom Range Slider">
+        <div
+          className="dual-range-wrap"
+          aria-label="Frequency Zoom Range Slider"
+          onWheel={handleWheel}
+        >
           <div className="dual-range-track" />
           <div
             className="dual-range-fill"

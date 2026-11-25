@@ -56,6 +56,7 @@ export const App: React.FC = () => {
   const [sampleRate, setSampleRate] = useState<number>(48000);
   const [devices, setDevices] = useState<AudioDeviceInfo[]>([]);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
+  const [analyzerPaused, setAnalyzerPaused] = useState<boolean>(false);
   const [spectrographPaused, setSpectrographPaused] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [frameTick, setFrameTick] = useState<number>(0);
@@ -202,6 +203,41 @@ export const App: React.FC = () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [audioEngine]);
+
+  // Space key pauses/resumes Spectrum Analyzer or Spectrograph on desktop
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' && e.key !== ' ') return;
+      if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+
+      const target = e.target as HTMLElement | null;
+      if (target) {
+        const tag = target.tagName;
+        if (
+          tag === 'INPUT' ||
+          tag === 'TEXTAREA' ||
+          tag === 'SELECT' ||
+          target.isContentEditable
+        ) {
+          return;
+        }
+      }
+
+      if (preferences.activeTab === 'analyzer' && sourceKind !== 'none') {
+        e.preventDefault();
+        setAnalyzerPaused((p) => !p);
+      } else if (
+        preferences.activeTab === 'spectrograph' &&
+        (sourceKind !== 'none' || spectrographBuffer.getFrameCount() > 0)
+      ) {
+        e.preventDefault();
+        setSpectrographPaused((p) => !p);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [preferences.activeTab, sourceKind, spectrographBuffer]);
 
   const setActiveTab = (tab: AppTab) => {
     updatePreferences((prev) => ({ ...prev, activeTab: tab }));
@@ -406,8 +442,10 @@ export const App: React.FC = () => {
             fftSize={preferences.audio.fftSize}
             sampleRate={sampleRate}
             isAudioActive={sourceKind !== 'none'}
+            isPaused={analyzerPaused}
             latestBinsRef={latestBinsRef}
             frameTick={frameTick}
+            onTogglePause={() => setAnalyzerPaused((p) => !p)}
             onUpdatePrefs={(patch) =>
               updatePreferences((prev) => ({
                 ...prev,

@@ -18,10 +18,13 @@ import { SpectrographBuffer } from '../audio/SpectrographBuffer';
 import { COLORMAP_OPTIONS, getColormapLUT } from '../utils/colormaps';
 import {
   clampFreqRange,
+  formatFreqTick,
   formatFrequency,
   freqToNorm,
   frequencyToNoteInfo,
+  getFrequencyTicks,
   normToFreq,
+  panFreqRange,
 } from '../utils/music';
 import {
   exportCanvasToPNG,
@@ -289,18 +292,17 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
     }
 
     // Frequency Axis Ticks (Left Y-axis: minFreq bottom -> maxFreq top)
-    const freqTicks =
-      prefs.freqScale === 'log'
-        ? [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
-        : Array.from({ length: 7 }, (_, idx) =>
-            prefs.minFreq + ((idx + 1) / 8) * (prefs.maxFreq - prefs.minFreq)
-          );
+    const freqTicks = getFrequencyTicks(
+      prefs.minFreq,
+      prefs.maxFreq,
+      prefs.freqScale,
+      plotH
+    );
 
     ctx.font = '11px JetBrains Mono, monospace';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
     for (const f of freqTicks) {
-      if (f < prefs.minFreq || f > prefs.maxFreq) continue;
       const norm = freqToNorm(f, prefs.minFreq, prefs.maxFreq, prefs.freqScale);
       const y = padTop + (1 - norm) * plotH;
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
@@ -310,11 +312,7 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
       ctx.stroke();
 
       ctx.fillStyle = '#94a3b8';
-      const label =
-        f >= 1000
-          ? `${(f / 1000).toFixed(f % 1000 === 0 ? 0 : 1)}k`
-          : `${Math.round(f)}`;
-      ctx.fillText(label, padLeft - 6, y);
+      ctx.fillText(formatFreqTick(f), padLeft - 6, y);
     }
 
     // Time Axis Ticks (Bottom X-axis: oldest on left -> newest on right)
@@ -498,25 +496,14 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
 
     // Vertical drag pans frequency range
     const dyNorm = (e.clientY - dragRef.current.startY) / plotH;
-    if (prefs.freqScale === 'log') {
-      const logMin = Math.log10(Math.max(20, dragRef.current.startMin));
-      const logMax = Math.log10(Math.max(21, dragRef.current.startMax));
-      const span = logMax - logMin;
-      const [lo, hi] = clampFreqRange(
-        Math.pow(10, logMin + dyNorm * span),
-        Math.pow(10, logMax + dyNorm * span),
-        nyquist
-      );
-      onUpdatePrefs({ minFreq: lo, maxFreq: hi });
-    } else {
-      const span = dragRef.current.startMax - dragRef.current.startMin;
-      const [lo, hi] = clampFreqRange(
-        dragRef.current.startMin + dyNorm * span,
-        dragRef.current.startMax + dyNorm * span,
-        nyquist
-      );
-      onUpdatePrefs({ minFreq: lo, maxFreq: hi });
-    }
+    const [lo, hi] = panFreqRange(
+      dragRef.current.startMin,
+      dragRef.current.startMax,
+      dyNorm,
+      nyquist,
+      prefs.freqScale
+    );
+    onUpdatePrefs({ minFreq: lo, maxFreq: hi });
   };
 
   const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
@@ -552,6 +539,7 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
   };
 
   const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    // Single-finger touch scrolls time (X) and pans frequency (Y) without zooming
     if (e.touches.length === 1 && dragRef.current?.active && canvasRef.current) {
       const t = e.touches[0];
       inspectAtClient(t.clientX, t.clientY);
@@ -570,25 +558,14 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
       setScrollBackSec(nextScroll);
 
       const dyNorm = (t.clientY - dragRef.current.startY) / plotH;
-      if (prefs.freqScale === 'log') {
-        const lMin = Math.log10(Math.max(20, dragRef.current.startMin));
-        const lMax = Math.log10(Math.max(21, dragRef.current.startMax));
-        const span = lMax - lMin;
-        const [lo, hi] = clampFreqRange(
-          Math.pow(10, lMin + dyNorm * span),
-          Math.pow(10, lMax + dyNorm * span),
-          nyquist
-        );
-        onUpdatePrefs({ minFreq: lo, maxFreq: hi });
-      } else {
-        const span = dragRef.current.startMax - dragRef.current.startMin;
-        const [lo, hi] = clampFreqRange(
-          dragRef.current.startMin + dyNorm * span,
-          dragRef.current.startMax + dyNorm * span,
-          nyquist
-        );
-        onUpdatePrefs({ minFreq: lo, maxFreq: hi });
-      }
+      const [lo, hi] = panFreqRange(
+        dragRef.current.startMin,
+        dragRef.current.startMax,
+        dyNorm,
+        nyquist,
+        prefs.freqScale
+      );
+      onUpdatePrefs({ minFreq: lo, maxFreq: hi });
     } else if (e.touches.length === 2 && pinchRef.current) {
       const t1 = e.touches[0];
       const t2 = e.touches[1];
@@ -864,6 +841,7 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
             type="button"
             className={`btn desktop-only-btn ${isPaused ? 'btn-active-mic' : ''}`}
             disabled={!isAudioActive && frameCount === 0}
+            title="Pause / Resume (Space)"
             onClick={onTogglePause}
           >
             {isPaused ? <Play size={13} /> : <Pause size={13} />}

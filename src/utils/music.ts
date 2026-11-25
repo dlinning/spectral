@@ -122,3 +122,126 @@ export function timeConstantMsToAlpha(
   const safeDt = Math.max(1, Math.min(100, dtMs));
   return Math.exp(-safeDt / tauMs);
 }
+
+const LOG_STANDARD_TICKS = [
+  20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000,
+];
+
+const LOG_ZOOM_CANDIDATES = [
+  10, 15, 20, 30, 40, 50, 60, 80,
+  100, 150, 200, 300, 400, 500, 600, 800,
+  1000, 1500, 2000, 3000, 4000, 5000, 6000, 8000,
+  10000, 12000, 15000, 20000, 24000,
+];
+
+const LINEAR_STEP_CANDIDATES = [
+  25, 50, 100, 200, 250, 500, 1000, 2000, 5000, 10000,
+];
+
+/**
+ * Computes clean, standard round frequency axis tick values for either Log or Linear scale.
+ */
+export function getFrequencyTicks(
+  minFreq: number,
+  maxFreq: number,
+  scale: FreqScale,
+  axisLengthPx = 700
+): number[] {
+  const safeMin = Math.max(20, minFreq);
+  const safeMax = Math.max(safeMin + 10, maxFreq);
+
+  if (scale === 'log') {
+    const ratio = safeMax / safeMin;
+    if (ratio >= 6) {
+      return LOG_STANDARD_TICKS.filter(
+        (f) => f >= safeMin - 0.5 && f <= safeMax + 0.5
+      );
+    }
+    const minGapPx = 28;
+    const ticks: number[] = [];
+    let lastPx = -Infinity;
+
+    for (const f of LOG_ZOOM_CANDIDATES) {
+      if (f < safeMin - 0.5 || f > safeMax + 0.5) continue;
+      const px = freqToNorm(f, safeMin, safeMax, 'log') * axisLengthPx;
+      if (px - lastPx >= minGapPx || ticks.length === 0) {
+        ticks.push(f);
+        lastPx = px;
+      }
+    }
+    return ticks;
+  }
+
+  // Linear scale: choose a standard round step so ticks are clean numbers like 1k, 2k, 5k, 10k, 20k
+  const span = safeMax - safeMin;
+  const maxTicks = Math.max(4, Math.min(12, Math.floor(axisLengthPx / 58)));
+  let step = LINEAR_STEP_CANDIDATES[LINEAR_STEP_CANDIDATES.length - 1];
+  for (const candidate of LINEAR_STEP_CANDIDATES) {
+    if (Math.floor(span / candidate) <= maxTicks) {
+      step = candidate;
+      break;
+    }
+  }
+
+  const ticks: number[] = [];
+  const first = Math.ceil(safeMin / step) * step;
+  for (let f = first; f <= safeMax + 0.5; f += step) {
+    ticks.push(Math.round(f));
+  }
+  return ticks;
+}
+
+export function formatFreqTick(f: number): string {
+  if (f >= 1000) {
+    const k = f / 1000;
+    return Number.isInteger(k) ? `${k}k` : `${k.toFixed(1)}k`;
+  }
+  return `${Math.round(f)}`;
+}
+
+/**
+ * Pans [startMin, startMax] by `deltaNorm` fraction of its own span while preserving
+ * the exact span width (no accidental zooming at 20 Hz or Nyquist boundaries).
+ */
+export function panFreqRange(
+  startMin: number,
+  startMax: number,
+  deltaNorm: number,
+  nyquist: number,
+  scale: FreqScale
+): [number, number] {
+  const absMin = 20;
+  const absMax = Math.max(1000, nyquist);
+
+  if (scale === 'log') {
+    const lMin = Math.log10(Math.max(absMin, startMin));
+    const lMax = Math.log10(Math.max(absMin + 1, startMax));
+    const lSpan = lMax - lMin;
+    const lAbsMin = Math.log10(absMin);
+    const lAbsMax = Math.log10(absMax);
+    let nextLo = lMin + deltaNorm * lSpan;
+    let nextHi = lMax + deltaNorm * lSpan;
+    if (nextLo < lAbsMin) {
+      nextLo = lAbsMin;
+      nextHi = Math.min(lAbsMax, lAbsMin + lSpan);
+    }
+    if (nextHi > lAbsMax) {
+      nextHi = lAbsMax;
+      nextLo = Math.max(lAbsMin, lAbsMax - lSpan);
+    }
+    return clampFreqRange(Math.pow(10, nextLo), Math.pow(10, nextHi), absMax);
+  }
+
+  const span = startMax - startMin;
+  let nextLo = startMin + deltaNorm * span;
+  let nextHi = startMax + deltaNorm * span;
+  if (nextLo < absMin) {
+    nextLo = absMin;
+    nextHi = Math.min(absMax, absMin + span);
+  }
+  if (nextHi > absMax) {
+    nextHi = absMax;
+    nextLo = Math.max(absMin, absMax - span);
+  }
+  return clampFreqRange(nextLo, nextHi, absMax);
+}
