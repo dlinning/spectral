@@ -5,7 +5,7 @@ import { usePreferencesContext } from '../../contexts/PreferencesContext';
 import { OctaveSmoothing, TiltSlope } from '../../types/preferences';
 import { DbRangeControls } from '../controls/DbRangeControls';
 import { ExportControls } from '../controls/ExportControls';
-import { FrequencyZoomControls } from '../controls/FrequencyZoomControls';
+import { FrequencyRangeSlider, FrequencyScaleControl } from '../controls/FrequencyZoomControls';
 import { SegmentedControl, SegmentedOption } from '../controls/SegmentedControl';
 
 const OCTAVE_OPTIONS: readonly SegmentedOption<OctaveSmoothing>[] = [
@@ -45,86 +45,93 @@ export const AnalyzerControls: React.FC<AnalyzerControlsProps> = ({
   const prefs = preferences.analyzer;
 
   return (
-    <div className={`controls-dock ${controlsOpen ? '' : 'collapsed'}`}>
-      <div className="control-group">
-        <span className="control-label">Octave Smooth</span>
-        <SegmentedControl
-          ariaLabel="Octave Smoothing"
-          options={OCTAVE_OPTIONS}
-          value={prefs.octaveSmoothing}
-          onChange={(octaveSmoothing) => updateAnalyzerPrefs({ octaveSmoothing })}
+    <div className={`controls-dock controls-dock-grouped ${controlsOpen ? '' : 'collapsed'}`}>
+      <div className="controls-row controls-row-toggles">
+        <div className="control-group">
+          <span className="control-label">Octave Smooth</span>
+          <SegmentedControl
+            ariaLabel="Octave Smoothing"
+            options={OCTAVE_OPTIONS}
+            value={prefs.octaveSmoothing}
+            onChange={(octaveSmoothing) => updateAnalyzerPrefs({ octaveSmoothing })}
+          />
+        </div>
+
+        <div className="control-group">
+          <span className="control-label">Slope</span>
+          <SegmentedControl
+            ariaLabel="Spectral Tilt"
+            options={TILT_OPTIONS}
+            value={prefs.tiltSlope ?? 0}
+            onChange={(tiltSlope) => updateAnalyzerPrefs({ tiltSlope })}
+          />
+        </div>
+
+        <FrequencyScaleControl
+          freqScale={prefs.freqScale}
+          onScaleChange={(freqScale) => updateAnalyzerPrefs({ freqScale })}
         />
-      </div>
 
-      <div className="control-group">
-        <span className="control-label">Slope</span>
-        <SegmentedControl
-          ariaLabel="Spectral Tilt"
-          options={TILT_OPTIONS}
-          value={prefs.tiltSlope ?? 0}
-          onChange={(tiltSlope) => updateAnalyzerPrefs({ tiltSlope })}
-        />
-      </div>
-
-      <div className="control-group">
-        <span className="control-label">Time Smooth</span>
-        <input
-          type="range"
-          aria-label="Spectrum Time Smoothing"
-          className="range-slider"
-          min={0}
-          max={300}
-          step={10}
-          value={prefs.timeSmoothingMs}
-          onChange={(e) => updateAnalyzerPrefs({ timeSmoothingMs: Number(e.target.value) })}
-        />
-        <span className="mono-val">{prefs.timeSmoothingMs} ms</span>
-      </div>
-
-      <FrequencyZoomControls
-        minFreq={prefs.minFreq}
-        maxFreq={prefs.maxFreq}
-        nyquist={nyquist}
-        freqScale={prefs.freqScale}
-        onRangeChange={(minFreq, maxFreq) => updateAnalyzerPrefs({ minFreq, maxFreq })}
-        onScaleChange={(freqScale) => updateAnalyzerPrefs({ freqScale })}
-      />
-
-      <DbRangeControls
-        minDb={prefs.minDb}
-        maxDb={prefs.maxDb}
-        onChange={(minDb, maxDb) => updateAnalyzerPrefs({ minDb, maxDb })}
-      />
-
-      <div className="control-group">
-        <button
-          type="button"
-          className={`btn desktop-only-btn ${analyzerPaused ? 'btn-active-mic' : ''}`}
-          disabled={!isAudioActive}
-          title="Pause / Resume (Space)"
-          onClick={toggleAnalyzerPause}
-        >
-          {analyzerPaused ? <Play size={13} /> : <Pause size={13} />}
-          <span>{analyzerPaused ? 'Resume' : 'Pause'}</span>
-        </button>
-        <button
-          type="button"
-          className={`btn ${prefs.showPeakHold ? 'btn-active-demo' : ''}`}
-          onClick={() => updateAnalyzerPrefs({ showPeakHold: !prefs.showPeakHold })}
-        >
-          Peak Hold
-        </button>
-        {prefs.showPeakHold && (
+        <div className="control-group">
           <button
             type="button"
-            className="btn btn-icon-only"
-            title="Clear Peak Hold"
-            aria-label="Clear Peak Hold"
-            onClick={onResetPeakHold}
+            className={`btn desktop-only-btn ${analyzerPaused ? 'btn-active-mic' : ''}`}
+            disabled={!isAudioActive}
+            title="Pause / Resume (Space)"
+            onClick={toggleAnalyzerPause}
           >
-            <RotateCcw size={13} />
+            {analyzerPaused ? <Play size={13} /> : <Pause size={13} />}
+            <span>{analyzerPaused ? 'Resume' : 'Pause'}</span>
           </button>
-        )}
+          <button
+            type="button"
+            className={`btn ${prefs.showPeakHold ? 'btn-active-demo' : ''}`}
+            onClick={() => updateAnalyzerPrefs({ showPeakHold: !prefs.showPeakHold })}
+          >
+            Peak Hold
+          </button>
+          {prefs.showPeakHold && (
+            <button
+              type="button"
+              className="btn btn-icon-only"
+              title="Clear Peak Hold"
+              aria-label="Clear Peak Hold"
+              onClick={onResetPeakHold}
+            >
+              <RotateCcw size={13} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="controls-row controls-row-sliders">
+        <div className="control-group">
+          <span className="control-label">Time Smooth</span>
+          <input
+            type="range"
+            aria-label="Spectrum Time Smoothing"
+            className="range-slider"
+            min={0}
+            max={300}
+            step={10}
+            value={prefs.timeSmoothingMs}
+            onChange={(e) => updateAnalyzerPrefs({ timeSmoothingMs: Number(e.target.value) })}
+          />
+          <span className="mono-val">{prefs.timeSmoothingMs} ms</span>
+        </div>
+
+        <FrequencyRangeSlider
+          minFreq={prefs.minFreq}
+          maxFreq={prefs.maxFreq}
+          nyquist={nyquist}
+          onRangeChange={(minFreq, maxFreq) => updateAnalyzerPrefs({ minFreq, maxFreq })}
+        />
+
+        <DbRangeControls
+          minDb={prefs.minDb}
+          maxDb={prefs.maxDb}
+          onChange={(minDb, maxDb) => updateAnalyzerPrefs({ minDb, maxDb })}
+        />
       </div>
 
       <ExportControls

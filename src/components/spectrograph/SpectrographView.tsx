@@ -9,7 +9,13 @@ import {
   formatSpectrographJSON,
   triggerFileDownload,
 } from '../../utils/exporters';
-import { formatFrequency, normToFreq, panFreqRange, zoomFreqRange } from '../../utils/music';
+import {
+  MAX_DISPLAY_FREQ_HZ,
+  formatFrequency,
+  normToFreq,
+  panFreqRange,
+  zoomFreqRange,
+} from '../../utils/music';
 import { MobileControlsBar } from '../controls/MobileControlsBar';
 import { EmptyAudioOverlay } from '../layout/EmptyAudioOverlay';
 import { SpectrographControls } from './SpectrographControls';
@@ -35,7 +41,7 @@ export const SpectrographView: React.FC = () => {
 
   const prefs = preferences.spectrograph;
   const fftSize = preferences.audio.fftSize;
-  const nyquist = sampleRate / 2;
+  const nyquist = Math.min(MAX_DISPLAY_FREQ_HZ, sampleRate / 2);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -338,7 +344,7 @@ export const SpectrographView: React.FC = () => {
 
         {!isAudioActive && buffer.getFrameCount() === 0 && (
           <EmptyAudioOverlay
-            title="60-Second Spectrograph Ready"
+            title="Spectrograph"
             description="Enable the microphone to begin. Drag horizontally to scroll back in time, or zoom/filter frequency and dB ranges."
             onStartMic={() => void startMicrophone()}
           />

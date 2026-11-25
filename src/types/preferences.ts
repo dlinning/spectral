@@ -51,6 +51,7 @@ export interface MusicalTunerPreferences {
   clarityThreshold: number; // 0.5 to 0.95
   viewMode: 'both' | 'needle' | 'strobe';
   toneGenWaveform: 'sine' | 'triangle';
+  toneGenFreqHz: number; // 20 to 5000 Hz (default 440 = A4)
   toneGenNoteIndex: number; // MIDI note (default 69 = A4)
   toneGenVolume: number; // 0.05 to 0.5
 }
@@ -100,8 +101,9 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   tuner: {
     referenceA4: 440,
     clarityThreshold: 0.78,
-    viewMode: 'both',
+    viewMode: 'needle',
     toneGenWaveform: 'sine',
+    toneGenFreqHz: 440,
     toneGenNoteIndex: 69,
     toneGenVolume: 0.2,
   },

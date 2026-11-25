@@ -377,6 +377,39 @@ select {
   z-index: 20;
 }
 
+.controls-dock-grouped {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'toggles export'
+    'sliders sliders';
+  align-items: center;
+  gap: 10px 18px;
+}
+
+.controls-row {
+  display: flex;
+  flex-flow: row wrap;
+  align-items: center;
+  gap: 10px 18px;
+  width: 100%;
+  min-width: 0;
+}
+
+.controls-row-toggles {
+  grid-area: toggles;
+}
+
+.controls-row-sliders {
+  grid-area: sliders;
+}
+
+.controls-dock-grouped .export-group {
+  grid-area: export;
+  margin-left: 0;
+  justify-self: end;
+}
+
 .controls-mobile-bar {
   display: none;
 }
@@ -845,14 +878,24 @@ select {
     gap: 10px;
   }
 
+  .controls-dock-grouped {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'toggles'
+      'sliders'
+      'export';
+  }
+
   .controls-dock.collapsed {
     display: none;
   }
 
-  .export-group {
+  .export-group,
+  .controls-dock-grouped .export-group {
     margin-left: 0;
     width: 100%;
     justify-content: flex-start;
+    justify-self: start;
   }
 
   .tuner-view {
@@ -954,12 +997,23 @@ select {
     gap: 10px;
   }
 
+  .controls-dock-grouped {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'toggles'
+      'sliders'
+      'export';
+    align-content: start;
+  }
+
   .controls-dock.collapsed {
     display: none;
   }
 
-  .export-group {
+  .export-group,
+  .controls-dock-grouped .export-group {
     margin-left: 0;
+    justify-self: start;
   }
 
   .tuner-view {

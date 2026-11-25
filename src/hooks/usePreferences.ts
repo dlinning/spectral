@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { DEFAULT_PREFERENCES, UserPreferences } from '../types/preferences';
+import {
+  MAX_DISPLAY_FREQ_HZ,
+  clampFreqRange,
+  clampToneFrequency,
+  midiToFrequency,
+} from '../utils/music';
 
 export const PREFERENCES_STORAGE_KEY = 'spectral_pwa_preferences_v1';
 
@@ -27,6 +33,53 @@ export function mergePreferences(
       ? stored.activeTab
       : defaults.activeTab;
 
+  const mergedTuner = {
+    ...defaults.tuner,
+    ...tuner,
+  };
+  if (typeof tuner.toneGenFreqHz !== 'number' || !Number.isFinite(tuner.toneGenFreqHz)) {
+    const refA4 =
+      typeof mergedTuner.referenceA4 === 'number' && Number.isFinite(mergedTuner.referenceA4)
+        ? mergedTuner.referenceA4
+        : defaults.tuner.referenceA4;
+    const noteIdx =
+      typeof mergedTuner.toneGenNoteIndex === 'number' &&
+      Number.isFinite(mergedTuner.toneGenNoteIndex)
+        ? mergedTuner.toneGenNoteIndex
+        : defaults.tuner.toneGenNoteIndex;
+    mergedTuner.toneGenFreqHz = clampToneFrequency(midiToFrequency(noteIdx, refA4));
+  } else {
+    mergedTuner.toneGenFreqHz = clampToneFrequency(mergedTuner.toneGenFreqHz);
+  }
+
+  const mergedAnalyzer = {
+    ...defaults.analyzer,
+    ...analyzer,
+  };
+  const [analyzerMin, analyzerMax] = clampFreqRange(
+    Number.isFinite(mergedAnalyzer.minFreq) ? mergedAnalyzer.minFreq : defaults.analyzer.minFreq,
+    Number.isFinite(mergedAnalyzer.maxFreq) ? mergedAnalyzer.maxFreq : defaults.analyzer.maxFreq,
+    MAX_DISPLAY_FREQ_HZ
+  );
+  mergedAnalyzer.minFreq = analyzerMin;
+  mergedAnalyzer.maxFreq = analyzerMax;
+
+  const mergedSpectrograph = {
+    ...defaults.spectrograph,
+    ...spectrograph,
+  };
+  const [spectroMin, spectroMax] = clampFreqRange(
+    Number.isFinite(mergedSpectrograph.minFreq)
+      ? mergedSpectrograph.minFreq
+      : defaults.spectrograph.minFreq,
+    Number.isFinite(mergedSpectrograph.maxFreq)
+      ? mergedSpectrograph.maxFreq
+      : defaults.spectrograph.maxFreq,
+    MAX_DISPLAY_FREQ_HZ
+  );
+  mergedSpectrograph.minFreq = spectroMin;
+  mergedSpectrograph.maxFreq = spectroMax;
+
   return {
     version: 1,
     activeTab: validTab,
@@ -34,18 +87,9 @@ export function mergePreferences(
       ...defaults.audio,
       ...audio,
     },
-    analyzer: {
-      ...defaults.analyzer,
-      ...analyzer,
-    },
-    spectrograph: {
-      ...defaults.spectrograph,
-      ...spectrograph,
-    },
-    tuner: {
-      ...defaults.tuner,
-      ...tuner,
-    },
+    analyzer: mergedAnalyzer,
+    spectrograph: mergedSpectrograph,
+    tuner: mergedTuner,
   };
 }
 

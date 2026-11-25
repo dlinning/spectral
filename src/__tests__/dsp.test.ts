@@ -1,16 +1,15 @@
-import { describe, expect, it, beforeAll, beforeEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { dspBridge, detectPitchMPMFallback } from '../wasm/dspBridge';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { SpectrographBuffer } from '../audio/SpectrographBuffer';
+import { PREFERENCES_STORAGE_KEY, loadPreferences, savePreferences } from '../hooks/usePreferences';
+import { DEFAULT_PREFERENCES, OctaveSmoothing } from '../types/preferences';
 import {
-  formatSpectrumCSV,
-  formatSpectrumJSON,
   formatSpectrographCSV,
   formatSpectrographJSON,
+  formatSpectrumCSV,
+  formatSpectrumJSON,
 } from '../utils/exporters';
-import { DEFAULT_PREFERENCES, OctaveSmoothing } from '../types/preferences';
-import { PREFERENCES_STORAGE_KEY, loadPreferences, savePreferences } from '../hooks/usePreferences';
 import {
   formatFreqTick,
   frequencyToNoteInfo,
@@ -18,6 +17,7 @@ import {
   timeConstantMsToAlpha,
   zoomFreqRange,
 } from '../utils/music';
+import { detectPitchMPMFallback, dspBridge } from '../wasm/dspBridge';
 
 function generateSine(freqHz: number, sampleRate: number, length: number): Float32Array {
   const out = new Float32Array(length);
@@ -272,7 +272,7 @@ describe('Spectral WASM DSP & Core Modules', () => {
       expect(logMobile).toContain(2000);
       expect(logMobile).toContain(20000);
 
-      const linearDesktop = getFrequencyTicks(20, 24000, 'linear', 800);
+      const linearDesktop = getFrequencyTicks(20, 20_000, 'linear', 800);
       expect(linearDesktop).toContain(20000);
       for (const t of linearDesktop) {
         expect(t % 1000).toBe(0);
@@ -282,13 +282,13 @@ describe('Spectral WASM DSP & Core Modules', () => {
     });
 
     it('zooms frequency ranges around an anchor frequency for both log and linear scales', () => {
-      const [logLo, logHi] = zoomFreqRange(20, 20000, 1000, 0.5, 24000, 'log');
+      const [logLo, logHi] = zoomFreqRange(20, 20000, 1000, 0.5, 20_000, 'log');
       expect(logLo).toBeGreaterThan(20);
       expect(logHi).toBeLessThan(20000);
       expect(logLo).toBeLessThan(1000);
       expect(logHi).toBeGreaterThan(1000);
 
-      const [linLo, linHi] = zoomFreqRange(1000, 5000, 3000, 0.5, 24000, 'linear');
+      const [linLo, linHi] = zoomFreqRange(1000, 5000, 3000, 0.5, 20_000, 'linear');
       expect(linLo).toBe(2000);
       expect(linHi).toBe(4000);
     });

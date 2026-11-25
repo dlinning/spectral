@@ -10,6 +10,7 @@ import {
   triggerFileDownload,
 } from '../../utils/exporters';
 import {
+  MAX_DISPLAY_FREQ_HZ,
   formatFrequency,
   frequencyToNoteInfo,
   normToFreq,
@@ -43,7 +44,7 @@ export const SpectrumAnalyzerView: React.FC = () => {
 
   const prefs = preferences.analyzer;
   const fftSize = preferences.audio.fftSize;
-  const nyquist = sampleRate / 2;
+  const nyquist = Math.min(MAX_DISPLAY_FREQ_HZ, sampleRate / 2);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -78,6 +79,7 @@ export const SpectrumAnalyzerView: React.FC = () => {
 
   const pinchRef = useRef<{
     initialDist: number;
+    startMidX: number;
     centerFreq: number;
     startMin: number;
     startMax: number;
@@ -235,17 +237,12 @@ export const SpectrumAnalyzerView: React.FC = () => {
     dragRef.current = null;
   };
 
-  // Touch support: single-finger pans frequency range; two-finger pinch zooms
+  // Touch support: single-finger inspects cursor; two-finger pinch zooms & pans frequency range
   const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
     if (e.touches.length === 1) {
       const t = e.touches[0];
       updateCursorFromClient(t.clientX, t.clientY);
-      dragRef.current = {
-        active: true,
-        startX: t.clientX,
-        startMin: prefs.minFreq,
-        startMax: prefs.maxFreq,
-      };
+      dragRef.current = null;
       pinchRef.current = null;
     } else if (e.touches.length === 2 && canvasRef.current) {
       const t1 = e.touches[0];
@@ -253,11 +250,12 @@ export const SpectrumAnalyzerView: React.FC = () => {
       const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
       const rect = canvasRef.current.getBoundingClientRect();
       const { padLeft, plotW } = getSpectrumPlotBounds(rect.width, rect.height);
-      const midX = (t1.clientX + t2.clientX) / 2 - rect.left;
-      const norm = Math.max(0, Math.min(1, (midX - padLeft) / plotW));
+      const startMidX = (t1.clientX + t2.clientX) / 2;
+      const norm = Math.max(0, Math.min(1, (startMidX - rect.left - padLeft) / plotW));
       const centerFreq = normToFreq(norm, prefs.minFreq, prefs.maxFreq, prefs.freqScale);
       pinchRef.current = {
         initialDist: Math.max(10, dist),
+        startMidX,
         centerFreq,
         startMin: prefs.minFreq,
         startMax: prefs.maxFreq,
@@ -267,26 +265,17 @@ export const SpectrumAnalyzerView: React.FC = () => {
   };
 
   const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
-    if (e.touches.length === 1 && dragRef.current?.active && canvasRef.current) {
+    if (e.touches.length === 1) {
       const t = e.touches[0];
       updateCursorFromClient(t.clientX, t.clientY);
-      const rect = canvasRef.current.getBoundingClientRect();
-      const { plotW } = getSpectrumPlotBounds(rect.width, rect.height);
-      const dxNorm = (t.clientX - dragRef.current.startX) / plotW;
-      const [lo, hi] = panFreqRange(
-        dragRef.current.startMin,
-        dragRef.current.startMax,
-        -dxNorm,
-        nyquist,
-        prefs.freqScale
-      );
-      updateAnalyzerPrefs({ minFreq: lo, maxFreq: hi });
-    } else if (e.touches.length === 2 && pinchRef.current) {
+    } else if (e.touches.length === 2 && pinchRef.current && canvasRef.current) {
       const t1 = e.touches[0];
       const t2 = e.touches[1];
+      const rect = canvasRef.current.getBoundingClientRect();
+      const { plotW } = getSpectrumPlotBounds(rect.width, rect.height);
       const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
       const scale = pinchRef.current.initialDist / Math.max(10, dist);
-      const [lo, hi] = zoomFreqRange(
+      const [zoomedLo, zoomedHi] = zoomFreqRange(
         pinchRef.current.startMin,
         pinchRef.current.startMax,
         pinchRef.current.centerFreq,
@@ -294,13 +283,18 @@ export const SpectrumAnalyzerView: React.FC = () => {
         nyquist,
         prefs.freqScale
       );
+      const midX = (t1.clientX + t2.clientX) / 2;
+      const dxNorm = (midX - pinchRef.current.startMidX) / Math.max(1, plotW);
+      const [lo, hi] = panFreqRange(zoomedLo, zoomedHi, -dxNorm, nyquist, prefs.freqScale);
       updateAnalyzerPrefs({ minFreq: lo, maxFreq: hi });
     }
   };
 
-  const handleTouchEnd = () => {
+  const handleTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
     dragRef.current = null;
-    pinchRef.current = null;
+    if (e.touches.length < 2) {
+      pinchRef.current = null;
+    }
   };
 
   const handleExportPNG = () => {
@@ -351,6 +345,7 @@ export const SpectrumAnalyzerView: React.FC = () => {
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchEnd}
         />
 
         <div className="canvas-hud-top-left">
@@ -386,8 +381,8 @@ export const SpectrumAnalyzerView: React.FC = () => {
 
         {!isAudioActive && (
           <EmptyAudioOverlay
-            title="Spectrum Analyzer Ready"
-            description="Enable the microphone to begin. Pinch with two fingers to zoom or drag to pan frequency ranges."
+            title="Spectrum Analyzer"
+            description="Enable the microphone to begin. Drag with one finger to inspect frequencies, or use two fingers to scroll and pinch-zoom."
             onStartMic={() => void startMicrophone()}
           />
         )}

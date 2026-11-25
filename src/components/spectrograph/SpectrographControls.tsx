@@ -137,6 +137,14 @@ export const SpectrographControls: React.FC<SpectrographControlsProps> = ({
       <div className="control-group">
         <button
           type="button"
+          className="btn"
+          title="Clear Spectrograph History"
+          onClick={onClearHistory}
+        >
+          <Trash2 size={13} /> Clear
+        </button>
+        <button
+          type="button"
           className={`btn desktop-only-btn ${spectrographPaused ? 'btn-active-mic' : ''}`}
           disabled={!isAudioActive && frameCount === 0}
           title="Pause / Resume (Space)"
@@ -144,14 +152,6 @@ export const SpectrographControls: React.FC<SpectrographControlsProps> = ({
         >
           {spectrographPaused ? <Play size={13} /> : <Pause size={13} />}
           <span>{spectrographPaused ? 'Resume' : 'Pause'}</span>
-        </button>
-        <button
-          type="button"
-          className="btn"
-          title="Clear Spectrograph History"
-          onClick={onClearHistory}
-        >
-          <Trash2 size={13} /> Clear
         </button>
       </div>
 

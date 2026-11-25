@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
 import { Mic } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAudio, useAudioFrame } from '../../contexts/AudioContext';
 import { usePreferencesContext } from '../../contexts/PreferencesContext';
 import { MusicalTunerPreferences } from '../../types/preferences';
@@ -144,7 +144,7 @@ export const MusicalTunerView: React.FC = () => {
             </span>
           ) : (
             <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-              {isAudioActive ? 'Play a note or sing into microphone' : 'Start Mic to tune'}
+              {isAudioActive ? 'Play a note or sing into microphone' : 'Enable Mic to tune'}
             </span>
           )}
         </div>
@@ -165,7 +165,7 @@ export const MusicalTunerView: React.FC = () => {
               className="btn btn-primary"
               onClick={() => void startMicrophone()}
             >
-              <Mic size={14} /> Start Mic
+              <Mic size={14} /> Enable Mic
             </button>
           </div>
         )}

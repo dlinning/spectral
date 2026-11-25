@@ -1,6 +1,12 @@
 import React, { useRef } from 'react';
 import { FreqScale } from '../../types/preferences';
-import { clampFreqRange, freqToNorm, normToFreq, zoomFreqRange } from '../../utils/music';
+import {
+  MAX_DISPLAY_FREQ_HZ,
+  clampFreqRange,
+  freqToNorm,
+  normToFreq,
+  zoomFreqRange,
+} from '../../utils/music';
 
 interface FreqAxisZoomBarProps {
   minFreq: number;
@@ -32,7 +38,7 @@ export const FreqAxisZoomBar: React.FC<FreqAxisZoomBarProps> = ({
   } | null>(null);
 
   const absMin = 20;
-  const absMax = Math.max(1000, Math.floor(nyquist / 100) * 100);
+  const absMax = Math.min(MAX_DISPLAY_FREQ_HZ, Math.max(1000, Math.floor(nyquist / 100) * 100));
 
   const snapHz = (hz: number) => {
     if (hz <= 55) return 20;

@@ -71,7 +71,6 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isTonePlaying, setIsTonePlaying] = useState<boolean>(false);
   const [frameTick, setFrameTick] = useState<number>(0);
 
-  const isRequestingMicRef = useRef<boolean>(false);
   const latestBinsRef = useRef<Float32Array>(new Float32Array(fftSize / 2).fill(-110));
   const spectroSmoothedRef = useRef<Float32Array>(new Float32Array(fftSize / 2).fill(-110));
   const latestTimeDomainRef = useRef<Float32Array>(new Float32Array(fftSize));
@@ -126,30 +125,25 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return () => cancelAnimationFrame(rafId);
   }, [sourceKind, audioEngine, spectrographBuffer, spectrographPaused, spectroTimeSmoothingMs]);
 
-  // Stop recording & reference tone playback whenever browser loses focus or is hidden
+  // Stop reference tone playback whenever browser loses focus or is hidden
   useEffect(() => {
-    const stopOnFocusLoss = () => {
-      if (isRequestingMicRef.current) return;
-      if (audioEngine.getSourceKind() !== 'none') {
-        audioEngine.stopSource();
-        setSourceKind('none');
-      }
+    const stopToneOnFocusLoss = () => {
       audioEngine.stopReferenceTone();
       setIsTonePlaying(false);
     };
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
-        stopOnFocusLoss();
+        stopToneOnFocusLoss();
       }
     };
 
-    window.addEventListener('blur', stopOnFocusLoss);
-    window.addEventListener('pagehide', stopOnFocusLoss);
+    window.addEventListener('blur', stopToneOnFocusLoss);
+    window.addEventListener('pagehide', stopToneOnFocusLoss);
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
-      window.removeEventListener('blur', stopOnFocusLoss);
-      window.removeEventListener('pagehide', stopOnFocusLoss);
+      window.removeEventListener('blur', stopToneOnFocusLoss);
+      window.removeEventListener('pagehide', stopToneOnFocusLoss);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [audioEngine]);
@@ -157,7 +151,6 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const startMicrophone = useCallback(
     async (deviceIdOverride?: string) => {
       setErrorMsg(null);
-      isRequestingMicRef.current = true;
       try {
         await audioEngine.startMicrophone(deviceIdOverride ?? inputDeviceId);
         const sr = audioEngine.getSampleRate();
@@ -169,8 +162,6 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       } catch (err) {
         setErrorMsg(err instanceof Error ? err.message : 'Unable to access microphone.');
         setSourceKind('none');
-      } finally {
-        isRequestingMicRef.current = false;
       }
     },
     [audioEngine, inputDeviceId, fftSize, spectrographBuffer]

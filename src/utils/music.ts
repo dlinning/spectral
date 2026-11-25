@@ -24,6 +24,31 @@ export interface MusicalNoteInfo {
   cents: number; // -50 to +50
 }
 
+export const TONE_MIN_FREQ_HZ = 20;
+export const TONE_MAX_FREQ_HZ = 5000;
+export const MAX_DISPLAY_FREQ_HZ = 20000;
+
+export function clampToneFrequency(freq: number): number {
+  if (!Number.isFinite(freq)) return 440;
+  return Math.max(TONE_MIN_FREQ_HZ, Math.min(TONE_MAX_FREQ_HZ, freq));
+}
+
+/**
+ * Computes the frequency of `noteIdx` (0=C .. 11=B) in `octave`, shifting by octaves
+ * if necessary so the result stays within [TONE_MIN_FREQ_HZ, TONE_MAX_FREQ_HZ].
+ */
+export function selectToneNoteInOctave(noteIdx: number, octave: number, referenceA4 = 440): number {
+  const midi = (octave + 1) * 12 + noteIdx;
+  let freq = midiToFrequency(midi, referenceA4);
+  while (freq < TONE_MIN_FREQ_HZ) {
+    freq *= 2;
+  }
+  while (freq > TONE_MAX_FREQ_HZ) {
+    freq /= 2;
+  }
+  return clampToneFrequency(freq);
+}
+
 export function midiToFrequency(midi: number, referenceA4 = 440): number {
   return referenceA4 * Math.pow(2, (midi - 69) / 12);
 }
@@ -111,7 +136,7 @@ export function clampFreqRange(
   minSpanHz = 20
 ): [number, number] {
   const absMin = 20;
-  const absMax = Math.max(1000, nyquist);
+  const absMax = Math.min(MAX_DISPLAY_FREQ_HZ, Math.max(1000, nyquist));
   let lo = Math.max(absMin, Math.min(absMax - minSpanHz, minFreq));
   let hi = Math.min(absMax, Math.max(absMin + minSpanHz, maxFreq));
   if (hi - lo < minSpanHz) {
@@ -135,7 +160,7 @@ const LOG_STANDARD_TICKS = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 2000
 
 const LOG_ZOOM_CANDIDATES = [
   10, 15, 20, 30, 40, 50, 60, 80, 100, 150, 200, 300, 400, 500, 600, 800, 1000, 1500, 2000, 3000,
-  4000, 5000, 6000, 8000, 10000, 12000, 15000, 20000, 24000,
+  4000, 5000, 6000, 8000, 10000, 12000, 15000, 20_000,
 ];
 
 const LINEAR_STEP_CANDIDATES = [25, 50, 100, 200, 250, 500, 1000, 2000, 5000, 10000];
@@ -211,7 +236,7 @@ export function panFreqRange(
   scale: FreqScale
 ): [number, number] {
   const absMin = 20;
-  const absMax = Math.max(1000, nyquist);
+  const absMax = Math.min(MAX_DISPLAY_FREQ_HZ, Math.max(1000, nyquist));
 
   if (scale === 'log') {
     const lMin = Math.log10(Math.max(absMin, startMin));
@@ -260,7 +285,7 @@ export function zoomFreqRange(
   minSpanHz = 40
 ): [number, number] {
   const absMin = 20;
-  const absMax = Math.max(1000, maxFreqLimit);
+  const absMax = Math.min(MAX_DISPLAY_FREQ_HZ, Math.max(1000, maxFreqLimit));
 
   if (scale === 'log') {
     const lMin = Math.log10(Math.max(absMin, startMin));
