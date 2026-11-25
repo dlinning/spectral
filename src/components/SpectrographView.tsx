@@ -4,7 +4,6 @@ import {
   Mic,
   Pause,
   Play,
-  Radio,
   RotateCcw,
   SlidersHorizontal,
   Trash2,
@@ -47,7 +46,6 @@ interface SpectrographViewProps {
   onUpdatePrefs: (patch: Partial<SpectrographPreferences>) => void;
   onClearBuffer: () => void;
   onStartMic: () => void;
-  onStartDemo: () => void;
 }
 
 const HISTORY_OPTIONS: HistoryDurationSec[] = [5, 15, 30, 60];
@@ -64,7 +62,6 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
   onUpdatePrefs,
   onClearBuffer,
   onStartMic,
-  onStartDemo,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -699,9 +696,6 @@ export const SpectrographView: React.FC<SpectrographViewProps> = ({
             <div className="empty-overlay-actions">
               <button type="button" className="btn btn-primary" onClick={onStartMic}>
                 <Mic size={15} /> Start Microphone
-              </button>
-              <button type="button" className="btn" onClick={onStartDemo}>
-                <Radio size={15} /> Run Demo Signal
               </button>
             </div>
           </div>

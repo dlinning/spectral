@@ -1,6 +1,6 @@
-import { DemoSignalMode, FftSizeOption } from '../types/preferences';
+import { FftSizeOption } from '../types/preferences';
 
-export type AudioSourceKind = 'none' | 'mic' | 'demo';
+export type AudioSourceKind = 'none' | 'mic';
 
 export interface AudioDeviceInfo {
   deviceId: string;
@@ -14,9 +14,6 @@ export class AudioEngine {
 
   private micStream: MediaStream | null = null;
   private micSource: MediaStreamAudioSourceNode | null = null;
-
-  private demoNodes: AudioNode[] = [];
-  private demoSweepTimer: number | null = null;
 
   private toneOsc: OscillatorNode | null = null;
   private toneGain: GainNode | null = null;
@@ -119,137 +116,7 @@ export class AudioEngine {
     this.sourceKind = 'mic';
   }
 
-  public async startDemoSignal(mode: DemoSignalMode): Promise<void> {
-    this.stopSource();
-    const ctx = await this.ensureContext();
-    if (!this.analyser) return;
-
-    const masterGain = ctx.createGain();
-    masterGain.gain.value = 0.45;
-    masterGain.connect(this.analyser);
-    this.demoNodes.push(masterGain);
-
-    if (mode === 'a4') {
-      const osc = ctx.createOscillator();
-      osc.type = 'sine';
-      osc.frequency.value = 440;
-      const g = ctx.createGain();
-      g.gain.value = 0.7;
-      osc.connect(g);
-      g.connect(masterGain);
-      osc.start();
-      this.demoNodes.push(osc, g);
-    } else if (mode === 'chord') {
-      // A major 7 / harmonic chord + subtle pink noise bed
-      const freqs = [220, 277.18, 329.63, 440, 880, 1760];
-      const amps = [0.35, 0.25, 0.25, 0.3, 0.14, 0.07];
-      freqs.forEach((f, idx) => {
-        const osc = ctx.createOscillator();
-        osc.type = idx < 2 ? 'triangle' : 'sine';
-        osc.frequency.value = f;
-        const g = ctx.createGain();
-        g.gain.value = amps[idx];
-        osc.connect(g);
-        g.connect(masterGain);
-        osc.start();
-        this.demoNodes.push(osc, g);
-      });
-      this.attachPinkNoise(ctx, masterGain, 0.08);
-    } else if (mode === 'harmonics') {
-      const osc = ctx.createOscillator();
-      osc.type = 'sawtooth';
-      osc.frequency.value = 110;
-      const filter = ctx.createBiquadFilter();
-      filter.type = 'lowpass';
-      filter.frequency.value = 4200;
-      const g = ctx.createGain();
-      g.gain.value = 0.45;
-      osc.connect(filter);
-      filter.connect(g);
-      g.connect(masterGain);
-      osc.start();
-      this.demoNodes.push(osc, filter, g);
-      this.attachPinkNoise(ctx, masterGain, 0.04);
-    } else if (mode === 'sweep') {
-      const osc = ctx.createOscillator();
-      osc.type = 'sine';
-      const g = ctx.createGain();
-      g.gain.value = 0.65;
-      osc.connect(g);
-      g.connect(masterGain);
-
-      const scheduleSweep = () => {
-        const now = ctx.currentTime;
-        osc.frequency.cancelScheduledValues(now);
-        osc.frequency.setValueAtTime(60, now);
-        osc.frequency.exponentialRampToValueAtTime(9000, now + 6.5);
-        osc.frequency.exponentialRampToValueAtTime(60, now + 7.8);
-      };
-
-      scheduleSweep();
-      osc.start();
-      this.demoSweepTimer = window.setInterval(scheduleSweep, 8000);
-      this.demoNodes.push(osc, g);
-      this.attachPinkNoise(ctx, masterGain, 0.05);
-    } else if (mode === 'pinknoise') {
-      this.attachPinkNoise(ctx, masterGain, 0.65);
-    }
-
-    this.sourceKind = 'demo';
-  }
-
-  private attachPinkNoise(
-    ctx: AudioContext,
-    destination: AudioNode,
-    gainAmount: number
-  ): void {
-    const bufferSize = ctx.sampleRate * 2;
-    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-    const out = buffer.getChannelData(0);
-
-    // Paul Kellet's refined pink noise filter
-    let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
-    for (let i = 0; i < bufferSize; i++) {
-      const white = Math.random() * 2 - 1;
-      b0 = 0.99886 * b0 + white * 0.0555179;
-      b1 = 0.99332 * b1 + white * 0.0750759;
-      b2 = 0.96900 * b2 + white * 0.1538520;
-      b3 = 0.86650 * b3 + white * 0.3104856;
-      b4 = 0.55000 * b4 + white * 0.5329522;
-      b5 = -0.7616 * b5 - white * 0.0168980;
-      out[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.06;
-      b6 = white * 0.115926;
-    }
-
-    const src = ctx.createBufferSource();
-    src.buffer = buffer;
-    src.loop = true;
-    const g = ctx.createGain();
-    g.gain.value = gainAmount;
-    src.connect(g);
-    g.connect(destination);
-    src.start();
-    this.demoNodes.push(src, g);
-  }
-
   public stopSource(): void {
-    if (this.demoSweepTimer !== null) {
-      window.clearInterval(this.demoSweepTimer);
-      this.demoSweepTimer = null;
-    }
-
-    for (const node of this.demoNodes) {
-      try {
-        if ('stop' in node && typeof (node as OscillatorNode).stop === 'function') {
-          (node as OscillatorNode).stop();
-        }
-        node.disconnect();
-      } catch {
-        // Already stopped
-      }
-    }
-    this.demoNodes = [];
-
     if (this.micSource) {
       try {
         this.micSource.disconnect();

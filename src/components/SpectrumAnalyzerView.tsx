@@ -3,7 +3,6 @@ import {
   Mic,
   Pause,
   Play,
-  Radio,
   RotateCcw,
   SlidersHorizontal,
 } from 'lucide-react';
@@ -46,7 +45,6 @@ interface SpectrumAnalyzerViewProps {
   onTogglePause: () => void;
   onUpdatePrefs: (patch: Partial<SpectrumAnalyzerPreferences>) => void;
   onStartMic: () => void;
-  onStartDemo: () => void;
 }
 
 const OCTAVE_OPTIONS: { value: OctaveSmoothing; label: string }[] = [
@@ -75,7 +73,6 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
   onTogglePause,
   onUpdatePrefs,
   onStartMic,
-  onStartDemo,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -757,15 +754,12 @@ export const SpectrumAnalyzerView: React.FC<SpectrumAnalyzerViewProps> = ({
           <div className="empty-audio-overlay">
             <h3>Spectrum Analyzer Ready</h3>
             <p>
-              Start your microphone for real-time acoustic analysis or launch the built-in
-              synthetic test signal. Drag or pinch to pan &amp; scroll/wheel to zoom frequency ranges.
+              Start your microphone for real-time acoustic analysis. Pinch with two fingers to
+              zoom or drag to pan frequency ranges.
             </p>
             <div className="empty-overlay-actions">
               <button type="button" className="btn btn-primary" onClick={onStartMic}>
                 <Mic size={15} /> Start Microphone
-              </button>
-              <button type="button" className="btn" onClick={onStartDemo}>
-                <Radio size={15} /> Run Demo Signal
               </button>
             </div>
           </div>

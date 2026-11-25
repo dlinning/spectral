@@ -5,13 +5,11 @@ import {
   Gauge,
   Mic,
   MicOff,
-  Radio,
   RotateCcw,
   Settings2,
 } from 'lucide-react';
 import {
   AppTab,
-  DemoSignalMode,
   FftSizeOption,
 } from './types/preferences';
 import { usePreferences } from './hooks/usePreferences';
@@ -24,13 +22,6 @@ import { SpectrographView } from './components/SpectrographView';
 import { MusicalTunerView } from './components/MusicalTunerView';
 
 const FFT_OPTIONS: FftSizeOption[] = [2048, 4096, 8192, 16384];
-const DEMO_MODES: { id: DemoSignalMode; label: string }[] = [
-  { id: 'chord', label: 'A Major Chord + Noise' },
-  { id: 'sweep', label: 'Log Sweep (60Hz–9kHz)' },
-  { id: 'harmonics', label: '110Hz Harmonic Stack' },
-  { id: 'a4', label: 'Pure A4 (440 Hz)' },
-  { id: 'pinknoise', label: 'Pink Noise (-3dB/oct)' },
-];
 
 export const App: React.FC = () => {
   const { preferences, updatePreferences, resetPreferences } = usePreferences();
@@ -151,26 +142,13 @@ export const App: React.FC = () => {
       setErrorMsg(
         err instanceof Error
           ? err.message
-          : 'Unable to access microphone. Try Demo Signal instead.'
+          : 'Unable to access microphone.'
       );
       setSourceKind('none');
     } finally {
       isRequestingMicRef.current = false;
     }
   }, [audioEngine, preferences.audio.inputDeviceId, preferences.audio.fftSize, spectrographBuffer]);
-
-  const handleStartDemo = useCallback(async () => {
-    setErrorMsg(null);
-    try {
-      await audioEngine.startDemoSignal(preferences.audio.demoMode);
-      const sr = audioEngine.getSampleRate();
-      setSampleRate(sr);
-      spectrographBuffer.configure(preferences.audio.fftSize / 2, sr);
-      setSourceKind('demo');
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Unable to start demo signal.');
-    }
-  }, [audioEngine, preferences.audio.demoMode, preferences.audio.fftSize, spectrographBuffer]);
 
   const handleStopAudio = useCallback(() => {
     audioEngine.stopSource();
@@ -299,18 +277,6 @@ export const App: React.FC = () => {
             </button>
           )}
 
-          {sourceKind === 'demo' ? (
-            <button type="button" className="btn btn-active-demo" onClick={handleStopAudio}>
-              <Radio size={14} />
-              <span className="desktop-only-label">Stop Demo</span>
-            </button>
-          ) : (
-            <button type="button" className="btn" onClick={() => void handleStartDemo()}>
-              <Radio size={14} />
-              <span className="desktop-only-label">Demo</span>
-            </button>
-          )}
-
           <div className="audio-settings-wrapper">
             <button
               type="button"
@@ -343,31 +309,6 @@ export const App: React.FC = () => {
                     {FFT_OPTIONS.map((sz) => (
                       <option key={sz} value={sz}>
                         {sz} pts ({(sampleRate / sz).toFixed(1)} Hz/bin)
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="popover-row">
-                  <label htmlFor="demo-mode-select">Demo Test Signal</label>
-                  <select
-                    id="demo-mode-select"
-                    className="select-compact"
-                    value={preferences.audio.demoMode}
-                    onChange={(e) => {
-                      const demoMode = e.target.value as DemoSignalMode;
-                      updatePreferences((prev) => ({
-                        ...prev,
-                        audio: { ...prev.audio, demoMode },
-                      }));
-                      if (sourceKind === 'demo') {
-                        void audioEngine.startDemoSignal(demoMode);
-                      }
-                    }}
-                  >
-                    {DEMO_MODES.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.label}
                       </option>
                     ))}
                   </select>
@@ -453,7 +394,6 @@ export const App: React.FC = () => {
               }))
             }
             onStartMic={() => void handleStartMic()}
-            onStartDemo={() => void handleStartDemo()}
           />
         )}
 
@@ -478,7 +418,6 @@ export const App: React.FC = () => {
               setFrameTick((t) => (t + 1) & 0x7fffffff);
             }}
             onStartMic={() => void handleStartMic()}
-            onStartDemo={() => void handleStartDemo()}
           />
         )}
 
@@ -497,7 +436,6 @@ export const App: React.FC = () => {
               }))
             }
             onStartMic={() => void handleStartMic()}
-            onStartDemo={() => void handleStartDemo()}
           />
         )}
       </main>

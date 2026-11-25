@@ -9,8 +9,6 @@ export type HistoryDurationSec = 5 | 15 | 30 | 60;
 
 export type ColormapId = 'magma' | 'viridis' | 'inferno' | 'plasma' | 'grayscale';
 
-export type DemoSignalMode = 'chord' | 'sweep' | 'harmonics' | 'pinknoise' | 'a4';
-
 export type FftSizeOption = 2048 | 4096 | 8192 | 16384;
 
 export interface AudioPreferences {
@@ -18,7 +16,6 @@ export interface AudioPreferences {
   inputDeviceId: string;
   minDecibels: number;
   maxDecibels: number;
-  demoMode: DemoSignalMode;
 }
 
 export type TiltSlope = 0 | 3 | 4.5;
@@ -75,7 +72,6 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
     inputDeviceId: 'default',
     minDecibels: -100,
     maxDecibels: 0,
-    demoMode: 'chord',
   },
   analyzer: {
     minFreq: 20,

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Mic, Radio, RotateCcw, Volume2, VolumeX } from 'lucide-react';
+import { Mic, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 import { MusicalTunerPreferences } from '../types/preferences';
 import { dspBridge } from '../wasm/dspBridge';
 import {
@@ -19,7 +19,6 @@ interface MusicalTunerViewProps {
   frameTick: number;
   onUpdatePrefs: (patch: Partial<MusicalTunerPreferences>) => void;
   onStartMic: () => void;
-  onStartDemo: () => void;
 }
 
 export const MusicalTunerView: React.FC<MusicalTunerViewProps> = ({
@@ -31,7 +30,6 @@ export const MusicalTunerView: React.FC<MusicalTunerViewProps> = ({
   frameTick,
   onUpdatePrefs,
   onStartMic,
-  onStartDemo,
 }) => {
   const [detectedFreq, setDetectedFreq] = useState<number>(-1);
   const [smoothedCents, setSmoothedCents] = useState<number>(0);
@@ -298,7 +296,7 @@ export const MusicalTunerView: React.FC<MusicalTunerViewProps> = ({
             <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
               {isAudioActive
                 ? 'Play a note or sing into microphone'
-                : 'Start Mic or Demo Signal to tune'}
+                : 'Start Mic to tune'}
             </span>
           )}
         </div>
@@ -393,9 +391,6 @@ export const MusicalTunerView: React.FC<MusicalTunerViewProps> = ({
           <div className="empty-overlay-actions">
             <button type="button" className="btn btn-primary" onClick={onStartMic}>
               <Mic size={14} /> Start Mic
-            </button>
-            <button type="button" className="btn" onClick={onStartDemo}>
-              <Radio size={14} /> Demo A4 / Harmonics
             </button>
           </div>
         )}
