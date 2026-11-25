@@ -1,7 +1,18 @@
 import { FreqScale } from '../types/preferences';
 
 export const NOTE_NAMES = [
-  'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B',
+  'C',
+  'C#',
+  'D',
+  'D#',
+  'E',
+  'F',
+  'F#',
+  'G',
+  'G#',
+  'A',
+  'A#',
+  'B',
 ] as const;
 
 export interface MusicalNoteInfo {
@@ -114,29 +125,20 @@ export function clampFreqRange(
  * Converts a time-smoothing constant in milliseconds (tauMs) and frame interval (dtMs)
  * into a 1-pole EMA smoothing coefficient alpha = exp(-dtMs / tauMs).
  */
-export function timeConstantMsToAlpha(
-  tauMs: number,
-  dtMs = 1000 / 60
-): number {
+export function timeConstantMsToAlpha(tauMs: number, dtMs = 1000 / 60): number {
   if (!Number.isFinite(tauMs) || tauMs <= 0) return 0;
   const safeDt = Math.max(1, Math.min(100, dtMs));
   return Math.exp(-safeDt / tauMs);
 }
 
-const LOG_STANDARD_TICKS = [
-  20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000,
-];
+const LOG_STANDARD_TICKS = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
 
 const LOG_ZOOM_CANDIDATES = [
-  10, 15, 20, 30, 40, 50, 60, 80,
-  100, 150, 200, 300, 400, 500, 600, 800,
-  1000, 1500, 2000, 3000, 4000, 5000, 6000, 8000,
-  10000, 12000, 15000, 20000, 24000,
+  10, 15, 20, 30, 40, 50, 60, 80, 100, 150, 200, 300, 400, 500, 600, 800, 1000, 1500, 2000, 3000,
+  4000, 5000, 6000, 8000, 10000, 12000, 15000, 20000, 24000,
 ];
 
-const LINEAR_STEP_CANDIDATES = [
-  25, 50, 100, 200, 250, 500, 1000, 2000, 5000, 10000,
-];
+const LINEAR_STEP_CANDIDATES = [25, 50, 100, 200, 250, 500, 1000, 2000, 5000, 10000];
 
 /**
  * Computes clean, standard round frequency axis tick values for either Log or Linear scale.
@@ -153,9 +155,7 @@ export function getFrequencyTicks(
   if (scale === 'log') {
     const ratio = safeMax / safeMin;
     if (ratio >= 6) {
-      return LOG_STANDARD_TICKS.filter(
-        (f) => f >= safeMin - 0.5 && f <= safeMax + 0.5
-      );
+      return LOG_STANDARD_TICKS.filter((f) => f >= safeMin - 0.5 && f <= safeMax + 0.5);
     }
     const minGapPx = 28;
     const ticks: number[] = [];
@@ -244,4 +244,48 @@ export function panFreqRange(
     nextLo = Math.max(absMin, absMax - span);
   }
   return clampFreqRange(nextLo, nextHi, absMax);
+}
+
+/**
+ * Zooms [startMin, startMax] around `anchorFreq` by `zoomFactor` (>1 zooms out, <1 zooms in)
+ * while clamping within [20, maxFreqLimit] and preserving at least `minSpanHz`.
+ */
+export function zoomFreqRange(
+  startMin: number,
+  startMax: number,
+  anchorFreq: number,
+  zoomFactor: number,
+  maxFreqLimit: number,
+  scale: FreqScale,
+  minSpanHz = 40
+): [number, number] {
+  const absMin = 20;
+  const absMax = Math.max(1000, maxFreqLimit);
+
+  if (scale === 'log') {
+    const lMin = Math.log10(Math.max(absMin, startMin));
+    const lMax = Math.log10(Math.max(absMin + 1, startMax));
+    const lAnchor = Math.log10(Math.max(absMin, anchorFreq));
+    const ratio = Math.max(0, Math.min(1, (lAnchor - lMin) / Math.max(0.001, lMax - lMin)));
+    const nextSpan = Math.max(
+      0.08,
+      Math.min(Math.log10(absMax / absMin), (lMax - lMin) * zoomFactor)
+    );
+    return clampFreqRange(
+      Math.pow(10, lAnchor - ratio * nextSpan),
+      Math.pow(10, lAnchor + (1 - ratio) * nextSpan),
+      absMax,
+      minSpanHz
+    );
+  }
+
+  const span = startMax - startMin;
+  const ratio = Math.max(0, Math.min(1, (anchorFreq - startMin) / Math.max(1, span)));
+  const nextSpan = Math.max(minSpanHz, Math.min(absMax - absMin, span * zoomFactor));
+  return clampFreqRange(
+    anchorFreq - ratio * nextSpan,
+    anchorFreq + (1 - ratio) * nextSpan,
+    absMax,
+    minSpanHz
+  );
 }

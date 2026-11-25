@@ -19,9 +19,8 @@ export function applyTimeSmoothing(
     const offset: usize = (<usize>i) << 2;
     const curr: f32 = load<f32>(currentPtr + offset);
     const prev: f32 = load<f32>(smoothedPtr + offset);
-    const val: f32 = isNaN(prev) || !isFinite(prev)
-      ? curr
-      : clampedAlpha * prev + oneMinusAlpha * curr;
+    const val: f32 =
+      isNaN(prev) || !isFinite(prev) ? curr : clampedAlpha * prev + oneMinusAlpha * curr;
     store<f32>(smoothedPtr + offset, val);
   }
 }

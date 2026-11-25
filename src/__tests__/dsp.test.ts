@@ -9,20 +9,14 @@ import {
   formatSpectrographCSV,
   formatSpectrographJSON,
 } from '../utils/exporters';
-import {
-  DEFAULT_PREFERENCES,
-  OctaveSmoothing,
-} from '../types/preferences';
-import {
-  PREFERENCES_STORAGE_KEY,
-  loadPreferences,
-  savePreferences,
-} from '../hooks/usePreferences';
+import { DEFAULT_PREFERENCES, OctaveSmoothing } from '../types/preferences';
+import { PREFERENCES_STORAGE_KEY, loadPreferences, savePreferences } from '../hooks/usePreferences';
 import {
   formatFreqTick,
   frequencyToNoteInfo,
   getFrequencyTicks,
   timeConstantMsToAlpha,
+  zoomFreqRange,
 } from '../utils/music';
 
 function generateSine(freqHz: number, sampleRate: number, length: number): Float32Array {
@@ -199,9 +193,9 @@ describe('Spectral WASM DSP & Core Modules', () => {
       const scrolledSlice = buffer.getHistorySlice(5, latestTs - 10000);
       expect(scrolledSlice.frames.length).toBeGreaterThanOrEqual(299);
       expect(scrolledSlice.frames.length).toBeLessThanOrEqual(302);
-      expect(
-        scrolledSlice.timestampsMs[scrolledSlice.timestampsMs.length - 1]
-      ).toBeLessThanOrEqual(latestTs - 10000);
+      expect(scrolledSlice.timestampsMs[scrolledSlice.timestampsMs.length - 1]).toBeLessThanOrEqual(
+        latestTs - 10000
+      );
     });
   });
 
@@ -212,24 +206,12 @@ describe('Spectral WASM DSP & Core Modules', () => {
       bins[10] = -12.5;
       peaks[10] = -8.25;
 
-      const csv = formatSpectrumCSV(
-        bins,
-        peaks,
-        48000,
-        2048,
-        DEFAULT_PREFERENCES.analyzer
-      );
+      const csv = formatSpectrumCSV(bins, peaks, 48000, 2048, DEFAULT_PREFERENCES.analyzer);
       const lines = csv.split('\n');
       expect(lines[0]).toBe('Frequency_Hz,Magnitude_dB,Peak_dB');
       expect(lines.length).toBeGreaterThan(100);
 
-      const jsonText = formatSpectrumJSON(
-        bins,
-        peaks,
-        48000,
-        2048,
-        DEFAULT_PREFERENCES.analyzer
-      );
+      const jsonText = formatSpectrumJSON(bins, peaks, 48000, 2048, DEFAULT_PREFERENCES.analyzer);
       const parsed = JSON.parse(jsonText);
       expect(parsed.metadata.fftSize).toBe(2048);
       expect(parsed.metadata.octaveSmoothing).toBe('Off');
@@ -245,20 +227,12 @@ describe('Spectral WASM DSP & Core Modules', () => {
         buffer.pushFrame(frame, i * 100, true);
       }
 
-      const csv = formatSpectrographCSV(
-        buffer,
-        256,
-        DEFAULT_PREFERENCES.spectrograph
-      );
+      const csv = formatSpectrographCSV(buffer, 256, DEFAULT_PREFERENCES.spectrograph);
       const lines = csv.split('\n');
       expect(lines[0].startsWith('Time_Offset_s,')).toBe(true);
       expect(lines.length).toBe(11); // header + 10 frames
 
-      const jsonText = formatSpectrographJSON(
-        buffer,
-        256,
-        DEFAULT_PREFERENCES.spectrograph
-      );
+      const jsonText = formatSpectrographJSON(buffer, 256, DEFAULT_PREFERENCES.spectrograph);
       const parsed = JSON.parse(jsonText);
       expect(parsed.metadata.historyDurationSec).toBe(30);
       expect(parsed.frames.length).toBe(10);
@@ -305,6 +279,18 @@ describe('Spectral WASM DSP & Core Modules', () => {
         const label = formatFreqTick(t);
         expect(label.includes('.')).toBe(false);
       }
+    });
+
+    it('zooms frequency ranges around an anchor frequency for both log and linear scales', () => {
+      const [logLo, logHi] = zoomFreqRange(20, 20000, 1000, 0.5, 24000, 'log');
+      expect(logLo).toBeGreaterThan(20);
+      expect(logHi).toBeLessThan(20000);
+      expect(logLo).toBeLessThan(1000);
+      expect(logHi).toBeGreaterThan(1000);
+
+      const [linLo, linHi] = zoomFreqRange(1000, 5000, 3000, 0.5, 24000, 'linear');
+      expect(linLo).toBe(2000);
+      expect(linHi).toBe(4000);
     });
   });
 });

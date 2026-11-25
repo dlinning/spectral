@@ -1,8 +1,5 @@
 import { SpectrographBuffer } from '../audio/SpectrographBuffer';
-import {
-  SpectrographPreferences,
-  SpectrumAnalyzerPreferences,
-} from '../types/preferences';
+import { SpectrographPreferences, SpectrumAnalyzerPreferences } from '../types/preferences';
 
 export interface SpectrumExportMeta {
   exportedAt: string;
@@ -32,11 +29,7 @@ function octaveLabel(denom: number): string {
   return denom <= 0 ? 'Off' : `1/${denom}`;
 }
 
-export function triggerFileDownload(
-  content: BlobPart,
-  filename: string,
-  mimeType: string
-): void {
+export function triggerFileDownload(content: BlobPart, filename: string, mimeType: string): void {
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -48,10 +41,7 @@ export function triggerFileDownload(
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function exportCanvasToPNG(
-  canvas: HTMLCanvasElement,
-  filenamePrefix: string
-): void {
+export function exportCanvasToPNG(canvas: HTMLCanvasElement, filenamePrefix: string): void {
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const dataUrl = canvas.toDataURL('image/png');
   const link = document.createElement('a');
@@ -76,8 +66,7 @@ export function formatSpectrumCSV(
     const freq = i * binWidth;
     if (freq < prefs.minFreq || freq > prefs.maxFreq) continue;
     const mag = Number.isFinite(smoothedDb[i]) ? smoothedDb[i].toFixed(3) : '-120.000';
-    const peak =
-      peakDb && Number.isFinite(peakDb[i]) ? peakDb[i].toFixed(3) : mag;
+    const peak = peakDb && Number.isFinite(peakDb[i]) ? peakDb[i].toFixed(3) : mag;
     lines.push(`${freq.toFixed(2)},${mag},${peak}`);
   }
   return lines.join('\n');
@@ -215,17 +204,13 @@ export function formatSpectrographJSON(
   );
 
   const latestMs =
-    slice.timestampsMs.length > 0
-      ? slice.timestampsMs[slice.timestampsMs.length - 1]
-      : 0;
+    slice.timestampsMs.length > 0 ? slice.timestampsMs[slice.timestampsMs.length - 1] : 0;
 
   const frameStep = Math.max(1, Math.floor(slice.frames.length / 600));
   const framesOut: { timeOffsetSec: number; magnitudesDb: number[] }[] = [];
 
   for (let f = 0; f < slice.frames.length; f += frameStep) {
-    const offsetSec = Number(
-      ((slice.timestampsMs[f] - latestMs) / 1000).toFixed(3)
-    );
+    const offsetSec = Number(((slice.timestampsMs[f] - latestMs) / 1000).toFixed(3));
     const frame = slice.frames[f];
     framesOut.push({
       timeOffsetSec: offsetSec,

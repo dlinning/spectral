@@ -1,0 +1,7 @@
+dist
+node_modules
+public/wasm
+assembly/build
+coverage
+yarn.lock
+package-lock.json

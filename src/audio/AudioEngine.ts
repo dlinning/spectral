@@ -41,8 +41,7 @@ export class AudioEngine {
     if (!this.ctx) {
       const AudioCtx =
         window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext })
-          .webkitAudioContext;
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       this.ctx = new AudioCtx({ latencyHint: 'interactive' });
       this.analyser = this.ctx.createAnalyser();
       this.analyser.fftSize = this.fftSize;
@@ -98,9 +97,7 @@ export class AudioEngine {
       echoCancellation: false,
       noiseSuppression: false,
       autoGainControl: false,
-      ...(deviceId && deviceId !== 'default'
-        ? { deviceId: { exact: deviceId } }
-        : {}),
+      ...(deviceId && deviceId !== 'default' ? { deviceId: { exact: deviceId } } : {}),
     };
 
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -166,20 +163,12 @@ export class AudioEngine {
     this.toneGain = gain;
   }
 
-  public updateReferenceTone(
-    freqHz: number,
-    waveform: 'sine' | 'triangle',
-    volume: number
-  ): void {
+  public updateReferenceTone(freqHz: number, waveform: 'sine' | 'triangle', volume: number): void {
     if (!this.ctx || !this.toneOsc || !this.toneGain) return;
     const now = this.ctx.currentTime;
     this.toneOsc.type = waveform;
     this.toneOsc.frequency.setTargetAtTime(freqHz, now, 0.015);
-    this.toneGain.gain.setTargetAtTime(
-      Math.max(0.01, Math.min(0.5, volume)),
-      now,
-      0.02
-    );
+    this.toneGain.gain.setTargetAtTime(Math.max(0.01, Math.min(0.5, volume)), now, 0.02);
   }
 
   public stopReferenceTone(): void {

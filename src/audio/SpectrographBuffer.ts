@@ -27,12 +27,7 @@ export class SpectrographBuffer {
    * @param sampleRate Audio sample rate in Hz
    * @param targetFps Target capture rate for throttling high-refresh displays (default 60fps)
    */
-  constructor(
-    maxFrames = 3600,
-    numBins = 2048,
-    sampleRate = 48000,
-    targetFps = 60
-  ) {
+  constructor(maxFrames = 3600, numBins = 2048, sampleRate = 48000, targetFps = 60) {
     this.maxFrames = Math.max(1, maxFrames);
     this.numBins = Math.max(1, numBins);
     this.sampleRate = sampleRate;
@@ -114,8 +109,7 @@ export class SpectrographBuffer {
    */
   public getFrameView(logicalIndex: number): Float32Array | null {
     if (logicalIndex < 0 || logicalIndex >= this.count) return null;
-    const startIdx =
-      this.count < this.maxFrames ? 0 : this.head;
+    const startIdx = this.count < this.maxFrames ? 0 : this.head;
     const physicalIdx = (startIdx + logicalIndex) % this.maxFrames;
     const offset = physicalIdx * this.numBins;
     return this.data.subarray(offset, offset + this.numBins);
@@ -137,10 +131,7 @@ export class SpectrographBuffer {
    * Returns logical indices of frames falling within the last `durationSec` seconds
    * relative to the newest stored frame (or `referenceNowMs` if provided).
    */
-  public getIndicesForDuration(
-    durationSec: number,
-    referenceNowMs?: number
-  ): number[] {
+  public getIndicesForDuration(durationSec: number, referenceNowMs?: number): number[] {
     if (this.count === 0) return [];
     const endMs = referenceNowMs ?? this.getLatestTimestamp();
     const cutoffMs = endMs - durationSec * 1000;
@@ -158,10 +149,7 @@ export class SpectrographBuffer {
   /**
    * Extracts copied frames and timestamps for a requested history window (5s, 15s, 30s, 60s).
    */
-  public getHistorySlice(
-    durationSec: number,
-    referenceNowMs?: number
-  ): SpectrographSlice {
+  public getHistorySlice(durationSec: number, referenceNowMs?: number): SpectrographSlice {
     const indices = this.getIndicesForDuration(durationSec, referenceNowMs);
     const frames: Float32Array[] = [];
     const timestampsMs: number[] = [];

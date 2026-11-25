@@ -1,7 +1,8 @@
 import React from 'react';
 import { RotateCcw } from 'lucide-react';
-import { FreqScale } from '../types/preferences';
-import { formatFrequency } from '../utils/music';
+import { FreqScale } from '../../types/preferences';
+import { formatFrequency } from '../../utils/music';
+import { SegmentedControl, SegmentedOption } from './SegmentedControl';
 
 interface FrequencyZoomControlsProps {
   minFreq: number;
@@ -11,6 +12,11 @@ interface FrequencyZoomControlsProps {
   onRangeChange: (minFreq: number, maxFreq: number) => void;
   onScaleChange: (scale: FreqScale) => void;
 }
+
+const SCALE_OPTIONS: readonly SegmentedOption<FreqScale>[] = [
+  { value: 'log', label: 'Log' },
+  { value: 'linear', label: 'Linear' },
+];
 
 export const FrequencyZoomControls: React.FC<FrequencyZoomControlsProps> = ({
   minFreq,
@@ -67,22 +73,12 @@ export const FrequencyZoomControls: React.FC<FrequencyZoomControlsProps> = ({
     <>
       <div className="control-group">
         <span className="control-label">Scale</span>
-        <div className="segmented" role="group" aria-label="Frequency Scale">
-          <button
-            type="button"
-            className={`seg-btn ${freqScale === 'log' ? 'active' : ''}`}
-            onClick={() => onScaleChange('log')}
-          >
-            Log
-          </button>
-          <button
-            type="button"
-            className={`seg-btn ${freqScale === 'linear' ? 'active' : ''}`}
-            onClick={() => onScaleChange('linear')}
-          >
-            Linear
-          </button>
-        </div>
+        <SegmentedControl
+          ariaLabel="Frequency Scale"
+          options={SCALE_OPTIONS}
+          value={freqScale}
+          onChange={onScaleChange}
+        />
       </div>
 
       <div className="control-group freq-zoom-group">

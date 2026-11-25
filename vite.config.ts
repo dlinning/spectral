@@ -4,9 +4,9 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
   base: './',
-  server:{
-    host:true,
-    allowedHosts:["e450-46-110-121-60.ngrok-free.app"]
+  server: {
+    host: true,
+    allowedHosts: ['e450-46-110-121-60.ngrok-free.app'],
   },
   plugins: [
     react(),

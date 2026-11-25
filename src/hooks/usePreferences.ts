@@ -1,8 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import {
-  DEFAULT_PREFERENCES,
-  UserPreferences,
-} from '../types/preferences';
+import { DEFAULT_PREFERENCES, UserPreferences } from '../types/preferences';
 
 export const PREFERENCES_STORAGE_KEY = 'spectral_pwa_preferences_v1';
 
@@ -53,7 +50,9 @@ export function mergePreferences(
 }
 
 export function loadPreferences(
-  storage: Pick<Storage, 'getItem'> | null = typeof window !== 'undefined' ? window.localStorage : null
+  storage: Pick<Storage, 'getItem'> | null = typeof window !== 'undefined'
+    ? window.localStorage
+    : null
 ): UserPreferences {
   if (!storage) return structuredClone(DEFAULT_PREFERENCES);
   try {
@@ -68,7 +67,9 @@ export function loadPreferences(
 
 export function savePreferences(
   prefs: UserPreferences,
-  storage: Pick<Storage, 'setItem'> | null = typeof window !== 'undefined' ? window.localStorage : null
+  storage: Pick<Storage, 'setItem'> | null = typeof window !== 'undefined'
+    ? window.localStorage
+    : null
 ): void {
   if (!storage) return;
   try {
@@ -95,16 +96,13 @@ export function usePreferences() {
     return () => window.removeEventListener('beforeunload', flush);
   }, [preferences]);
 
-  const updatePreferences = useCallback(
-    (updater: (prev: UserPreferences) => UserPreferences) => {
-      setPreferences((prev) => {
-        const next = updater(prev);
-        savePreferences(next);
-        return next;
-      });
-    },
-    []
-  );
+  const updatePreferences = useCallback((updater: (prev: UserPreferences) => UserPreferences) => {
+    setPreferences((prev) => {
+      const next = updater(prev);
+      savePreferences(next);
+      return next;
+    });
+  }, []);
 
   const resetPreferences = useCallback(() => {
     const fresh = structuredClone(DEFAULT_PREFERENCES);

@@ -5,12 +5,7 @@
  */
 
 export interface WasmDspExports {
-  applyTimeSmoothing(
-    currentPtr: number,
-    smoothedPtr: number,
-    length: number,
-    alpha: number
-  ): void;
+  applyTimeSmoothing(currentPtr: number, smoothedPtr: number, length: number, alpha: number): void;
   updatePeakHold(
     currentPtr: number,
     peakPtr: number,
@@ -80,10 +75,7 @@ class DspBridge {
         let instance: WebAssembly.Instance;
         if (typeof WebAssembly.instantiateStreaming === 'function') {
           try {
-            const res = await WebAssembly.instantiateStreaming(
-              response.clone(),
-              imports
-            );
+            const res = await WebAssembly.instantiateStreaming(response.clone(), imports);
             instance = res.instance;
           } catch {
             const bytes = await response.arrayBuffer();
@@ -121,11 +113,7 @@ class DspBridge {
     return true;
   }
 
-  public applyTimeSmoothing(
-    current: Float32Array,
-    smoothed: Float32Array,
-    alpha: number
-  ): void {
+  public applyTimeSmoothing(current: Float32Array, smoothed: Float32Array, alpha: number): void {
     const len = Math.min(current.length, smoothed.length);
     if (len <= 0) return;
 
@@ -143,17 +131,11 @@ class DspBridge {
     for (let i = 0; i < len; i++) {
       const prev = smoothed[i];
       const curr = current[i];
-      smoothed[i] = Number.isFinite(prev)
-        ? clamped * prev + oneMinus * curr
-        : curr;
+      smoothed[i] = Number.isFinite(prev) ? clamped * prev + oneMinus * curr : curr;
     }
   }
 
-  public updatePeakHold(
-    current: Float32Array,
-    peak: Float32Array,
-    decayDbPerFrame: number
-  ): void {
+  public updatePeakHold(current: Float32Array, peak: Float32Array, decayDbPerFrame: number): void {
     const len = Math.min(current.length, peak.length);
     if (len <= 0) return;
 
@@ -195,9 +177,7 @@ class DspBridge {
         len,
         octaveDenominator
       );
-      outputDb.set(
-        f32.subarray(PTR_OCTAVE_OUT >> 2, (PTR_OCTAVE_OUT >> 2) + len)
-      );
+      outputDb.set(f32.subarray(PTR_OCTAVE_OUT >> 2, (PTR_OCTAVE_OUT >> 2) + len));
       return;
     }
 

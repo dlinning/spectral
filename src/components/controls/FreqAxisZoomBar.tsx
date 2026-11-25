@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
-import { FreqScale } from '../types/preferences';
-import { clampFreqRange, freqToNorm, normToFreq } from '../utils/music';
+import { FreqScale } from '../../types/preferences';
+import { clampFreqRange, freqToNorm, normToFreq, zoomFreqRange } from '../../utils/music';
 
 interface FreqAxisZoomBarProps {
   minFreq: number;
@@ -40,7 +40,10 @@ export const FreqAxisZoomBar: React.FC<FreqAxisZoomBarProps> = ({
   };
 
   const leftPct = Math.max(0, Math.min(100, freqToNorm(minFreq, absMin, absMax, freqScale) * 100));
-  const rightPct = Math.max(leftPct, Math.min(100, freqToNorm(maxFreq, absMin, absMax, freqScale) * 100));
+  const rightPct = Math.max(
+    leftPct,
+    Math.min(100, freqToNorm(maxFreq, absMin, absMax, freqScale) * 100)
+  );
 
   const startDrag = (mode: DragMode, clientX: number) => {
     dragRef.current = {
@@ -123,36 +126,20 @@ export const FreqAxisZoomBar: React.FC<FreqAxisZoomBarProps> = ({
     const rect = trackRef.current.getBoundingClientRect();
     const norm = Math.max(0, Math.min(1, (e.clientX - rect.left) / Math.max(20, rect.width)));
     const zoomFactor = e.deltaY > 0 ? 1.15 : 0.87;
-
-    if (freqScale === 'log') {
-      const lMin = Math.log10(Math.max(absMin, minFreq));
-      const lMax = Math.log10(Math.max(absMin + 1, maxFreq));
-      const lCursor = Math.log10(normToFreq(norm, absMin, absMax, 'log'));
-      const ratio = Math.max(0, Math.min(1, (lCursor - lMin) / Math.max(0.01, lMax - lMin)));
-      const nextSpan = Math.max(
-        0.08,
-        Math.min(Math.log10(absMax / absMin), (lMax - lMin) * zoomFactor)
-      );
-      const [lo, hi] = clampFreqRange(
-        Math.pow(10, lCursor - ratio * nextSpan),
-        Math.pow(10, lCursor + (1 - ratio) * nextSpan),
-        absMax,
-        100
-      );
-      onRangeChange(lo, hi);
-    } else {
-      const span = maxFreq - minFreq;
-      const cursorFreq = normToFreq(norm, absMin, absMax, 'linear');
-      const ratio = Math.max(0, Math.min(1, (cursorFreq - minFreq) / Math.max(1, span)));
-      const nextSpan = Math.max(100, Math.min(absMax - absMin, span * zoomFactor));
-      const [lo, hi] = clampFreqRange(
-        snapHz(cursorFreq - ratio * nextSpan),
-        snapHz(cursorFreq + (1 - ratio) * nextSpan),
-        absMax,
-        100
-      );
-      onRangeChange(lo, hi);
-    }
+    const cursorFreq = normToFreq(norm, absMin, absMax, freqScale);
+    const [lo, hi] = zoomFreqRange(
+      minFreq,
+      maxFreq,
+      cursorFreq,
+      zoomFactor,
+      absMax,
+      freqScale,
+      100
+    );
+    onRangeChange(
+      freqScale === 'linear' ? snapHz(lo) : lo,
+      freqScale === 'linear' ? snapHz(hi) : hi
+    );
   };
 
   return (
