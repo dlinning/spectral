@@ -204,15 +204,15 @@ describe("Tuner Defaults, Tone Frequency Slider & Focus-Loss Behavior", () => {
 
 		const slider = container.querySelector<HTMLInputElement>('input[aria-label="Reference Tone Frequency"]');
 		expect(slider).not.toBeNull();
-		expect(container.textContent).toContain("A4 (440.0 Hz)");
+		expect(container.textContent).toContain("A4 (440.0Hz)");
 
 		// Slide to minimum (20 Hz)
 		setRangeValue(slider!, slider!.min);
-		expect(container.textContent).toContain("20.0 Hz");
+		expect(container.textContent).toContain("20.0Hz");
 
 		// Slide to maximum (5000 Hz)
 		setRangeValue(slider!, slider!.max);
-		expect(container.textContent).toContain("5000.0 Hz");
+		expect(container.textContent).toContain("5.00kHz");
 
 		// Key shortcut: click C in current octave, then switch to A4
 		const cBtn = Array.from(container.querySelectorAll("button.note-chip")).find(b => b.textContent?.trim() === "C");
@@ -220,22 +220,22 @@ describe("Tuner Defaults, Tone Frequency Slider & Focus-Loss Behavior", () => {
 		act(() => {
 			cBtn!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 		});
-		// From 5000 Hz (octave 8), C8 is 4186.0 Hz
-		expect(container.textContent).toContain("C8 (4186.0 Hz)");
+		// From 5000 Hz (octave 8), C8 is 4.19 kHz
+		expect(container.textContent).toContain("C8 (4.19kHz)");
 
-		// Octave - shortcut steps down to C7 (2093.0 Hz)
+		// Octave - shortcut steps down to C7 (2.09 kHz)
 		const octDownBtn = Array.from(container.querySelectorAll("button")).find(b => b.textContent?.trim() === "-");
 		act(() => {
 			octDownBtn!.click();
 		});
-		expect(container.textContent).toContain("C7 (2093.0 Hz)");
+		expect(container.textContent).toContain("C7 (2.09kHz)");
 
-		// Octave + shortcut steps back up to C8 (4186.0 Hz), then disables + since C9 > 5000 Hz
+		// Octave + shortcut steps back up to C8 (4.19 kHz), then disables + since C9 > 5000 Hz
 		const octUpBtn = Array.from(container.querySelectorAll("button")).find(b => b.textContent?.trim() === "+");
 		act(() => {
 			octUpBtn!.click();
 		});
-		expect(container.textContent).toContain("C8 (4186.0 Hz)");
+		expect(container.textContent).toContain("C8 (4.19kHz)");
 		expect(octUpBtn!.disabled).toBe(true);
 
 		// Play tone uses current frequency
@@ -312,7 +312,7 @@ describe("Tuner Defaults, Tone Frequency Slider & Focus-Loss Behavior", () => {
 		const storedAfterOneFinger = JSON.parse(window.localStorage.getItem(PREFERENCES_STORAGE_KEY) ?? "{}");
 		expect(storedAfterOneFinger.analyzer.minFreq).toBe(200);
 		expect(storedAfterOneFinger.analyzer.maxFreq).toBe(2000);
-		expect(container.textContent).toContain("200 Hz – 2.00 kHz");
+		expect(container.textContent).toContain("200Hz – 2.00kHz");
 		expect(container.textContent).toContain("dB");
 
 		// Two-finger horizontal drag (same finger spacing) pans/scrolls the zoomed range
@@ -607,7 +607,7 @@ describe("Tuner Defaults, Tone Frequency Slider & Focus-Loss Behavior", () => {
 		);
 
 		expect(arcSpy).toHaveBeenCalled();
-		expect(fillTextSpy).toHaveBeenCalledWith("440 Hz", expect.any(Number), expect.any(Number));
+		expect(fillTextSpy).toHaveBeenCalledWith("440Hz", expect.any(Number), expect.any(Number));
 		expect(fillTextSpy).toHaveBeenCalledWith("-5.2s", expect.any(Number), expect.any(Number));
 	});
 
