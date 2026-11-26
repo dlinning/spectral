@@ -1,6 +1,7 @@
 import { RotateCcw } from "lucide-react";
 import React from "react";
 import { usePreferencesContext } from "~/contexts/PreferencesContext";
+import { formatFrequency } from "~/utils/music";
 
 interface TunerCalibrationCardProps {
 	clarity: number;
@@ -48,7 +49,7 @@ export const TunerCalibrationCard: React.FC<TunerCalibrationCardProps> = ({ clar
 					+1
 				</button>
 				<span className="mono-val" style={{ minWidth: 64, textAlign: "right" }}>
-					{prefs.referenceA4} Hz
+					{formatFrequency(prefs.referenceA4)}
 				</span>
 			</div>
 

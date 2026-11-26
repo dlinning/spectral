@@ -79,11 +79,12 @@ export const ToneGeneratorCard: React.FC = () => {
 	};
 
 	const centsRounded = noteInfo ? Math.round(noteInfo.cents) : 0;
+	const frequencyLabel = formatFrequency(targetToneFreq, false, targetToneFreq <= 1000 ? 1 : 2);
 	const headerReadout = noteInfo
 		? isOnNote
-			? `${noteInfo.label} (${targetToneFreq.toFixed(1)} Hz)`
-			: `~${noteInfo.label} (${centsRounded >= 0 ? "+" : ""}${centsRounded}¢) · ${targetToneFreq.toFixed(1)} Hz`
-		: `${targetToneFreq.toFixed(1)} Hz`;
+			? `${noteInfo.label} (${frequencyLabel})`
+			: `~${noteInfo.label} (${centsRounded >= 0 ? "+" : ""}${centsRounded}¢) · ${frequencyLabel}`
+		: `${frequencyLabel}`;
 
 	return (
 		<div className="tuner-card">

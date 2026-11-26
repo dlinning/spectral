@@ -69,12 +69,16 @@ export function frequencyToNoteInfo(freq: number, referenceA4 = 440): MusicalNot
 	};
 }
 
-export function formatFrequency(freq: number): string {
+export function formatFrequency(freq: number, hideUnit?: boolean, forceDecimal?: number): string {
+	let unitText = hideUnit ? "" : "Hz";
+
 	if (freq >= 1000) {
 		const khz = freq / 1000;
-		return khz >= 10 ? `${khz.toFixed(1)} kHz` : `${khz.toFixed(2)} kHz`;
+		unitText = hideUnit ? "" : "kHz";
+		return `${khz.toFixed(forceDecimal != undefined ? forceDecimal : khz >= 10 ? 1 : 2)}${unitText}`.trim();
 	}
-	return freq >= 100 ? `${freq.toFixed(0)} Hz` : `${freq.toFixed(1)} Hz`;
+
+	return `${freq.toFixed(forceDecimal != undefined ? forceDecimal : freq >= 100 ? 0 : 1)}${unitText}`.trim();
 }
 
 /**

@@ -20,10 +20,11 @@ export const AppHeader: React.FC = () => {
 	return (
 		<header className="app-header">
 			<div className="brand-group">
-				<img src="./logo/icon.svg" alt="Spectral Logo" className="brand-icon" />
+				<img src="./logo/icon.svg" alt="" aria-hidden="true" role="presentation" className="brand-icon" />
 				<div className="brand-text">
-					<span className="brand-title">Spectral</span>
+					<span className="brand-title">SPECTRAL</span>
 				</div>
+				<span className="spectral-title-bars" aria-hidden="true" />
 			</div>
 
 			<nav className="top-tabs" role="tablist" aria-label="Primary Views">

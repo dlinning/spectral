@@ -35,8 +35,8 @@ export default defineConfig({
 				name: "Spectral — Spectrum Analyzer, Spectrogram & Tuner",
 				short_name: "Spectral",
 				description: "Spectrum Analyzer, Spectrogram, and Chromatic Musical Tuner.",
-				theme_color: "#090d16",
-				background_color: "#090d16",
+				theme_color: "#161922",
+				background_color: "#0b0e14",
 				display: "standalone",
 				orientation: "any",
 				icons: [
